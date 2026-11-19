@@ -1,26 +1,106 @@
-
 {
-    "version": "2.0.0",
-    "tasks": [
-        {
-            "label": "C++ Build",
-            "type": "shell",
-            "command": "C:\\msys64\\ucrt64\\bin\\g++.exe",
-            "args": [
-                "-std=c++20",
-                "-g",
-                "${file}",
-                "-o",
-                "${fileDirname}\\${fileBasenameNoExtension}.exe"
-            ],
-            "options": {
-                "cwd": "${fileDirname}"
-            },
-            "problemMatcher": ["$gcc"],
-            "group": {
-                "kind": "build",
-                "isDefault": true
-            }
-        }
-    ]
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Create build directory",
+      "type": "process",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-Command",
+        "New-Item -ItemType Directory -Force -Path 'build/Release' | Out-Null"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Build fingerprint DLL",
+      "type": "process",
+      "command": "C:\\msys64\\ucrt64\\bin\\g++.exe",
+      "args": [
+        "-std=c++17",
+        "-g",
+        "-shared",
+        "-static",
+        "-static-libstdc++",
+        "-Iinclude",
+        "-Isrc",
+        "src/api/kisa_api.cpp",
+        "src/feature/feature_extractor.cpp",
+        "src/feature/template_manager.cpp",
+        "src/matching/fingerprint_matcher.cpp",
+        "-Wl,--out-implib,build/Release/libIndustryAlgorithm.dll.a",
+        "-o",
+        "build/Release/IndustryAlgorithm.dll"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "dependsOn": "Create build directory",
+      "problemMatcher": [
+        "$gcc"
+      ]
+    },
+    {
+      "label": "Build fingerprint pipeline",
+      "type": "process",
+      "command": "C:\\msys64\\ucrt64\\bin\\g++.exe",
+      "args": [
+        "-std=c++17",
+        "-g",
+        "-static",
+        "-static-libstdc++",
+        "-Iinclude",
+        "tests/test_pipeline.cpp",
+        "build/Release/libIndustryAlgorithm.dll.a",
+        "-o",
+        "build/Release/test_pipeline.exe"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "dependsOn": "Build fingerprint DLL",
+      "problemMatcher": [
+        "$gcc"
+      ]
+    },
+    {
+      "label": "Build fingerprint comparison app",
+      "type": "process",
+      "command": "C:\\msys64\\ucrt64\\bin\\g++.exe",
+      "args": [
+        "-std=c++17",
+        "-g",
+        "-mwindows",
+        "-municode",
+        "-static",
+        "-static-libstdc++",
+        "-Iinclude",
+        "app/main.cpp",
+        "app/comparison_window.cpp",
+        "app/fingerprint_image.cpp",
+        "build/Release/libIndustryAlgorithm.dll.a",
+        "-lole32",
+        "-lwindowscodecs",
+        "-luuid",
+        "-lcomdlg32",
+        "-lgdi32",
+        "-o",
+        "build/Release/fingerprint_compare.exe"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "dependsOn": "Build fingerprint pipeline",
+      "problemMatcher": [
+        "$gcc"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    }
+  ]
 }

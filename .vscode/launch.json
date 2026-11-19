@@ -2,18 +2,14 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "C++ Debug (GDB)",
+      "name": "Fingerprint pipeline (GDB)",
       "type": "cppdbg",
       "request": "launch",
-      "program": "${fileDirname}\\${fileBasenameNoExtension}.exe",
-      "args": [],
-      "stopAtEntry": false,
-      "cwd": "${fileDirname}",
-      "environment": [],
-      "externalConsole": false,
+      "program": "${workspaceFolder}/build/Release/test_pipeline.exe",
+      "cwd": "${workspaceFolder}",
       "MIMode": "gdb",
       "miDebuggerPath": "C:\\msys64\\ucrt64\\bin\\gdb.exe",
-      "preLaunchTask": "C++ Build"
+      "preLaunchTask": "Build fingerprint pipeline"
     },
     {
       "name": "C/C++ Runner: Debug Session",
