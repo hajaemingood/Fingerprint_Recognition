@@ -1,0 +1,39 @@
+{
+  "pair_files_sha256": {
+    "build\\evaluation\\fvc2004-roi-validation\\standard\\pairs.csv": "3882c0c3ca74df525034affaf5601eadeaf7b91da976be48e849af0287328713",
+    "build\\evaluation\\fvc2004-roi-validation\\roi\\pairs.csv": "0f350a5e986e88ad97f6bd4576764386f5a63f5c70b1014c850ef81584846103"
+  },
+  "augmentation_profile": {
+    "gaussian_sigmas": [
+      2,
+      5,
+      10,
+      20,
+      30
+    ],
+    "gaussian_seeds": [
+      42,
+      43
+    ],
+    "rotation_degrees": [
+      -10,
+      -5,
+      5,
+      10
+    ],
+    "brightness_offsets": [
+      -15,
+      15
+    ]
+  },
+  "aggregation": "mean across 11 settings, with both seeds averaged within each Gaussian setting",
+  "thresholds": {
+    "standard": 0.966,
+    "roi": 0.875
+  },
+  "threshold_selection": "lowest threshold producing FMR at most 1% on original development pairs",
+  "observed_fmr_cap": "descriptive point from original evaluation scores, separate from threshold selection",
+  "texture_weight": 0.22,
+  "native_comparisons_per_dll": 53720,
+  "native_pair_failures": 0
+}

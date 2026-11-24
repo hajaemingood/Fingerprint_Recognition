@@ -1,0 +1,6 @@
+{
+  "gaussian_sigmas": [2, 5, 10, 20, 30],
+  "gaussian_seeds": [42, 43],
+  "rotation_degrees": [-10, -5, 5, 10],
+  "brightness_offsets": [-15, 15]
+}

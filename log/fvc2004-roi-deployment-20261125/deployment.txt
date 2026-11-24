@@ -1,0 +1,14 @@
+FVC2004 영역 자르기 평가용 DLL 반영
+2026-11-25
+
+평가 앱의 기본 경로 build/evaluator/IndustryAlgorithm.dll을 FINGERPRINT_FVC2004_ROI=ON으로 다시 빌드했다. VS Code와 README의 PowerShell 빌드에 같은 옵션을 지정했다. KISA iType 3에서 영역 자르기가 적용되며, 사전학습 ONNX는 기존 배포 파일과 해시가 일치한다.
+
+교체 전 DLL, ONNX, ONNX Runtime 및 HTML은 build/rollback/fvc2004-before-roi-20261125에 보관했다.
+
+CTest의 evaluation_workflow, noise_and_metrics, deepprint_reference가 통과했다. 모델 내보내기로 FVC2004 영역 자르기 참조를 다시 생성하고, 새 참조로 앱 폴더의 DLL 기준 벡터를 확인했다.
+
+평가 앱과 같은 평가 엔진 및 x64 워커로 원본 FVC 세 DB의 9,480쌍을 처리했다. 실패·타임아웃은 0건이었다. FVC2000·2002의 6,320쌍은 교체 전 점수와 일치했고 FVC2004의 3,160쌍은 검증한 ROI 후보 점수와 일치했다. 이 실행의 HTML을 reports/fingerprint_evaluation.html에 게시했다.
+
+FVC2004 전체 원본 EER은 11.00%에서 5.69%로 내려갔다. EER 계산 임계값 0.825에서 FMR은 5.66%, FNMR은 5.71%였다. 이 값은 EER 교차점에서의 오류율이다. FMR 1% 운영 임계값 검증은 별도의 데이터가 필요하다.
+
+original_metrics.csv는 세 DB의 임계값과 EER·FMR·FNMR을 기록한다. source_hashes.csv는 배포 파일, 이전 백업 및 평가 결과의 해시를 기록한다.

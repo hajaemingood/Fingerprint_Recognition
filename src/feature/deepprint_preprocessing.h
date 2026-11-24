@@ -8,7 +8,7 @@ namespace fingerprint {
 
 inline constexpr int kDeepPrintInputSize = 299;
 
-// White square padding followed by antialiased bilinear resize, in [0, 1].
-std::vector<float> preprocessDeepPrint(const unsigned char* image, ImageFormat format);
+// Optional foreground crop, white square padding, and antialiased resize to [0, 1].
+std::vector<float> preprocessDeepPrint(const unsigned char* image, ImageFormat format, bool cropForeground = false);
 
 } // namespace fingerprint

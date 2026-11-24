@@ -1,0 +1,59 @@
+{
+  "protocol": "one fixed highest ID per database; six fit and two seen-test captures for each other ID",
+  "held_out_ids": {
+    "FVC2002_DB2_B": 110,
+    "FVC2004_DB1_B": 110
+  },
+  "seed": 42,
+  "texture_weight": 0.5,
+  "thresholds": {
+    "reference_22_78": 0.971,
+    "baseline": 0.974,
+    "fine_tuned": 0.957,
+    "training_ablation": 0.963
+  },
+  "threshold_calibration": "clean development pairs using five enroll captures and one separate probe per seen ID",
+  "candidate_heads": "both",
+  "candidate_augmented": false,
+  "augmentation_profile": {
+    "gaussian_sigmas": [
+      2,
+      5,
+      10,
+      20,
+      30
+    ],
+    "gaussian_seeds": [
+      42,
+      43
+    ],
+    "rotation_degrees": [
+      -10,
+      -5,
+      5,
+      10
+    ],
+    "brightness_offsets": [
+      -15,
+      15
+    ]
+  },
+  "augmentation_settings": 11,
+  "augmentation_variants": 16,
+  "aggregation": "macro mean over settings, averaging seeds within each Gaussian setting",
+  "development_objective": "equal weight to original EER and the augmentation mean EER",
+  "refit_epochs": {
+    "fine_tuned": 12,
+    "training_ablation": 12
+  },
+  "development_baseline_objective": 0.08888888888888888,
+  "development_candidate_objective": 0.03044507575757576,
+  "source_model_sha256": "fefd22f072db080fab8afea2050069ce04c63fa43a7ecbb1613bb65050d59fcc",
+  "source_manifests": {
+    "C:\\Users\\hajaemin\\Desktop\\Advanced_OOP\\build\\augmentation\\fvc-robustness-verify": "f11ff025dae94084206ac5dfdec65cac25ad52a71038d4908f962390f1409c00",
+    "C:\\Users\\hajaemin\\Desktop\\Advanced_OOP\\build\\augmentation\\fvc-high-noise-seed42": "cf9705b512aa3380db24c28b413e13e8d37290853ed8a1af8868341b5b7a9ea9",
+    "C:\\Users\\hajaemin\\Desktop\\Advanced_OOP\\build\\augmentation\\fvc-high-noise-seed43": "9bd4c09e10708a0aa3f1caa72ca3eeffdbc3138a3aa3647a560bdfbcde69a0b1"
+  },
+  "candidate_model_sha256": "a4bbcbf3fa62b1aa5329233d64ce0a04e0e1473f889764b731767e1efe7206f6",
+  "export_max_embedding_delta": 8.940696716308594e-08
+}

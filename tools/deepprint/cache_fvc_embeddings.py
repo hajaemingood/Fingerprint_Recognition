@@ -16,15 +16,34 @@ import torchvision.transforms.functional as vision
 
 
 DATABASES = ("FVC2002_DB2_B", "FVC2004_DB1_B")
-PILOTS = {
-    "FVC2002_DB2_B": {
-        "bilateral": ("original", "noise-10-s42", "noise-40-s42"),
-    },
-    "FVC2004_DB1_B": {
-        "center": ("original", "rotation-10", "rotation+10"),
-        "roi": ("original", "rotation-10", "rotation+10"),
-    },
-}
+PROFILE_PATH = Path(__file__).resolve().parents[2] / "src/experiments/fvc_augmentation.json"
+PROFILE = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
+MAX_SIGMA = max(PROFILE["gaussian_sigmas"])
+HISTORICAL_SIGMA = 40
+
+
+def augmentation_groups(max_sigma=MAX_SIGMA):
+    sigmas = list(PROFILE["gaussian_sigmas"])
+    if max_sigma == HISTORICAL_SIGMA:
+        sigmas.append(HISTORICAL_SIGMA)
+    groups = [
+        tuple(f"noise-{sigma:02}-s{seed}" for seed in PROFILE["gaussian_seeds"])
+        for sigma in sigmas
+    ]
+    groups.extend((f"rotation{degrees:+03}",) for degrees in PROFILE["rotation_degrees"])
+    groups.extend((f"brightness{offset:+03}",) for offset in PROFILE["brightness_offsets"])
+    return tuple(groups)
+
+
+def preprocessing_pilots(max_sigma):
+    rotations = ("original", "rotation-10", "rotation+10")
+    return {
+        DATABASES[0]: {"bilateral": ("original", "noise-10-s42", f"noise-{max_sigma:02}-s42")},
+        DATABASES[1]: {"center": rotations, "roi": rotations},
+    }
+
+
+PILOTS = preprocessing_pilots(HISTORICAL_SIGMA)
 
 
 def file_hash(path):
@@ -47,7 +66,7 @@ def condition_key(row):
     return f"{kind}{value:+03}"
 
 
-def paths_for_conditions(data, augmentation):
+def paths_for_conditions(data, augmentation, max_sigma=MAX_SIGMA):
     groups = {}
     for database in DATABASES:
         originals = sorted((data / database).glob("*.tif"))
@@ -63,16 +82,15 @@ def paths_for_conditions(data, augmentation):
             condition = condition_key(row)
             if condition == "original" or condition.startswith("flip"):
                 continue
+            if condition.startswith("noise-") and int(condition.split("-")[1]) > max_sigma:
+                continue
             mapping = groups[database].setdefault(condition, {})
             filename = Path(row["source"]).name
             if filename in mapping:
                 raise ValueError(f"Duplicate variant {database}/{condition}/{filename}")
             mapping[filename] = directory / row["probe"]
 
-    expected = {"original"}
-    expected.update(f"noise-{sigma:02}-s{seed}" for sigma in (2, 5, 10, 20, 30, 40) for seed in (42, 43))
-    expected.update(f"rotation{value:+03}" for value in (-10, -5, 5, 10))
-    expected.update(f"brightness{value:+03}" for value in (-15, 15))
+    expected = {"original", *(key for group in augmentation_groups(max_sigma) for key in group)}
     for database, conditions in groups.items():
         if set(conditions) != expected:
             raise ValueError(f"Unexpected conditions for {database}: {sorted(set(conditions) ^ expected)}")
@@ -154,18 +172,22 @@ def prepare_image(path, mode):
 
 def run_cache(args):
     torch.set_num_threads(1)
-    groups = paths_for_conditions(args.fvc, args.augmentation)
+    groups = paths_for_conditions(args.fvc, args.augmentation, args.max_sigma)
     description = {
         "model": str(args.model.resolve()),
         "model_sha256": file_hash(args.model),
         "fvc": str(args.fvc.resolve()),
         "manifests": {str(p.resolve()): file_hash(p / "manifest.csv") for p in args.augmentation},
         "preprocessing_pilot": not args.standard_only,
+        "max_sigma": args.max_sigma,
     }
     args.output.mkdir(parents=True, exist_ok=True)
     metadata = args.output / "source.json"
-    if metadata.exists() and json.loads(metadata.read_text(encoding="utf-8")) != description:
-        raise ValueError("Cache inputs changed. Choose a new output directory.")
+    if metadata.exists():
+        previous = json.loads(metadata.read_text(encoding="utf-8"))
+        previous.setdefault("max_sigma", HISTORICAL_SIGMA)
+        if previous != description:
+            raise ValueError("Cache inputs changed. Choose a new output directory.")
     metadata.write_text(json.dumps(description, indent=2), encoding="utf-8")
 
     tasks = []
@@ -173,7 +195,7 @@ def run_cache(args):
         for condition, mapping in sorted(conditions.items()):
             tasks.append((database, "standard", condition, mapping))
         if not args.standard_only:
-            for mode, subset in PILOTS[database].items():
+            for mode, subset in preprocessing_pilots(args.max_sigma)[database].items():
                 tasks.extend((database, mode, condition, conditions[condition]) for condition in subset)
 
     options = ort.SessionOptions()
@@ -214,6 +236,8 @@ def main():
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--workers", type=int, default=2)
     parser.add_argument("--standard-only", action="store_true")
+    parser.add_argument("--max-sigma", type=int, choices=(MAX_SIGMA, HISTORICAL_SIGMA), default=MAX_SIGMA,
+                        help="Use 40 only to reproduce the historical experiment")
     run_cache(parser.parse_args())
 
 

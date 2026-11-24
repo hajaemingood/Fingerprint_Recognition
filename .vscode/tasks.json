@@ -8,7 +8,7 @@
       "args": [
         "-NoProfile",
         "-Command",
-        "$cmake = Get-Command cmake.exe -ErrorAction SilentlyContinue; $cmakePath = if ($cmake) { $cmake.Source } else { 'build/dependencies/python/Lib/site-packages/cmake/data/bin/cmake.exe' }; & $cmakePath -S . -B build/evaluator -G 'MinGW Makefiles' -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=C:/msys64/ucrt64/bin/g++.exe -DCMAKE_MAKE_PROGRAM=C:/msys64/ucrt64/bin/mingw32-make.exe -DFINGERPRINT_DEEPPRINT=ON -DFINGERPRINT_BUILD_GUI=ON -DFINGERPRINT_DEEPPRINT_REFERENCE_DIR=build/models/parity; exit $LASTEXITCODE"
+        "$cmake = Get-Command cmake.exe -ErrorAction SilentlyContinue; $cmakePath = if ($cmake) { $cmake.Source } else { 'build/dependencies/python/Lib/site-packages/cmake/data/bin/cmake.exe' }; & $cmakePath -S . -B build/evaluator -G 'MinGW Makefiles' -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=C:/msys64/ucrt64/bin/g++.exe -DCMAKE_MAKE_PROGRAM=C:/msys64/ucrt64/bin/mingw32-make.exe -DFINGERPRINT_DEEPPRINT=ON -DFINGERPRINT_FVC2004_ROI=ON -DFINGERPRINT_BUILD_GUI=ON -DFINGERPRINT_DEEPPRINT_REFERENCE_DIR=build/models/parity; exit $LASTEXITCODE"
       ],
       "options": {
         "cwd": "${workspaceFolder}"

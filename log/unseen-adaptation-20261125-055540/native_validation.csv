@@ -1,0 +1,9 @@
+database,group,subset,checked_pairs,max_score_delta
+FVC2002_DB2_B,seen,original,162,0.0
+FVC2002_DB2_B,unseen,original,70,0.0
+FVC2002_DB2_B,seen,maximum_noise,324,0.0
+FVC2002_DB2_B,unseen,maximum_noise,140,0.0
+FVC2004_DB1_B,seen,original,162,0.0
+FVC2004_DB1_B,unseen,original,70,0.0
+FVC2004_DB1_B,seen,maximum_noise,324,0.0
+FVC2004_DB1_B,unseen,maximum_noise,140,0.0

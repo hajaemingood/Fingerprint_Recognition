@@ -1,0 +1,90 @@
+{
+  "selected": {
+    "heads": "texture",
+    "training_augmentation": "original",
+    "strength": 0.5,
+    "epoch": 12,
+    "threshold": 0.951,
+    "original_eer": 0.020312499999999997,
+    "augmentation_mean_eer": 0.043892045454545454,
+    "objective": 0.03210227272727273,
+    "original_fmr": 0.003125,
+    "original_fnmr": 0.5,
+    "augmentation_mean_fnmr": 0.5931818181818183
+  },
+  "pretrained": {
+    "heads": "frozen",
+    "training_augmentation": "original",
+    "strength": 0.0,
+    "epoch": 0,
+    "threshold": 0.959,
+    "original_eer": 0.0390625,
+    "augmentation_mean_eer": 0.05227272727272727,
+    "objective": 0.04566761363636364,
+    "original_fmr": 0.003125,
+    "original_fnmr": 0.625,
+    "augmentation_mean_fnmr": 0.65
+  },
+  "augmentation_comparison_anchor": {
+    "heads": "texture",
+    "training_augmentation": "original",
+    "strength": 0.5,
+    "epoch": 12,
+    "threshold": 0.951,
+    "original_eer": 0.020312499999999997,
+    "augmentation_mean_eer": 0.043892045454545454,
+    "objective": 0.03210227272727273,
+    "original_fmr": 0.003125,
+    "original_fnmr": 0.5,
+    "augmentation_mean_fnmr": 0.5931818181818183
+  },
+  "development_gate_passed": true,
+  "development_gate": "both objective and original FNMR below pretrained at calibrated FMR <= 1%",
+  "objective": "mean of original EER and 11-setting augmentation mean EER, equally weighted by DB and fold",
+  "threshold_calibration": "lowest common threshold with original FMR <= 1% in both databases, pooled across development folds",
+  "held_out_ids": {
+    "FVC2002_DB2_B": 110,
+    "FVC2004_DB1_B": 110
+  },
+  "fold_seed": 43,
+  "seed": 42,
+  "texture_weight": 0.5,
+  "augmentation_profile": {
+    "gaussian_sigmas": [
+      2,
+      5,
+      10,
+      20,
+      30
+    ],
+    "gaussian_seeds": [
+      42,
+      43
+    ],
+    "rotation_degrees": [
+      -10,
+      -5,
+      5,
+      10
+    ],
+    "brightness_offsets": [
+      -15,
+      15
+    ]
+  },
+  "comparison_epochs": [
+    1,
+    3,
+    6,
+    12
+  ],
+  "strengths": [
+    0.1,
+    0.25,
+    0.5,
+    1.0
+  ],
+  "source_model_sha256": "fefd22f072db080fab8afea2050069ce04c63fa43a7ecbb1613bb65050d59fcc",
+  "candidate_model_sha256": "d566c1116daa1a7c7875b8d0cef0d65814cec844bcfd3665ebf668f2af52b121",
+  "export_max_embedding_delta": 5.774199962615967e-08
+}

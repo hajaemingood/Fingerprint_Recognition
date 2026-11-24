@@ -41,6 +41,7 @@ Advanced_OOP/
 │   │   ├── deepprint_preprocessing.{h,cpp}
 │   │   ├── fingerprint_features.h    # 512차원 특징 자료형
 │   │   └── template_manager.{h,cpp}   # 템플릿 직렬화·복원
+│   ├── experiments/fvc_augmentation.json # 알고리즘 실험의 증강 조건
 │   └── matching/fingerprint_matcher.{h,cpp}
 ├── app/
 │   ├── main.cpp                      # Windows GUI 진입점
@@ -145,7 +146,7 @@ $cmake = if ($installedCmake) { $installedCmake.Source } else {
 & $cmake -S . -B build/evaluator -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release `
   -DCMAKE_CXX_COMPILER=C:/msys64/ucrt64/bin/g++.exe `
   -DCMAKE_MAKE_PROGRAM=C:/msys64/ucrt64/bin/mingw32-make.exe `
-  -DFINGERPRINT_BUILD_GUI=ON -DFINGERPRINT_DEEPPRINT=ON `
+  -DFINGERPRINT_BUILD_GUI=ON -DFINGERPRINT_DEEPPRINT=ON -DFINGERPRINT_FVC2004_ROI=ON `
   -DFINGERPRINT_DEEPPRINT_REFERENCE_DIR=build/models/parity
 & $cmake --build build/evaluator --parallel 4
 ```
@@ -156,7 +157,7 @@ $cmake = if ($installedCmake) { $installedCmake.Source } else {
 | --- | --- |
 | `fingerprint_compare.exe` | 평가 설정, 실행, 중단, 보고서 열기 |
 | `fingerprint_worker_x64.exe` | 선택한 x64 DLL을 실행하는 별도 프로세스 |
-| `IndustryAlgorithm.dll` | DeepPrint의 KISA 함수 구현 |
+| `IndustryAlgorithm.dll` | DeepPrint의 KISA 함수 구현과 FVC2004 영역 자르기 |
 | `deepprint_texminu_512.onnx`, `onnxruntime.dll` | DeepPrint 모델과 추론 런타임 |
 | `augment_fvc.exe`, `evaluate_noise.exe` | 영상 증강과 명령줄 일괄 평가 |
 | `tune_weights.exe` | 저장된 DeepPrint 템플릿으로 질감·특징점 가중치 비교 |
@@ -306,6 +307,34 @@ $run = 'run-1795498198097-1824-1'
 도구는 손가락 ID를 시드 42로 나누고, 개발 데이터에서 질감 가중치 0.00~1.00을 0.01 간격으로 시험합니다. 개발 데이터의 DB별 EER 평균으로 후보를 선택하고, 확인 데이터에서 기존 연결 코사인과 선택한 가중치를 비교합니다. 운영 임계값은 개발 단계에서 각 DB의 FMR이 1% 이하인 최소 공통 값으로 정합니다.
 
 `log/`의 실험 폴더에서 `split.csv`는 손가락별 분할, `development.csv`는 가중치 후보별 결과, `comparison.csv`는 확인·전체 결과, `summary.txt`는 입력 경로와 선택 기준을 기록합니다. CSV의 오류율 단위는 0~1입니다. [22:78 실험 기록](log/weight-tuning-20261124-164133/summary.txt)
+
+## 촬영본 6:2와 마지막 ID 평가
+
+FVC2002·2004에서 DB별 최대 손가락 ID를 최종 평가용으로 지정합니다. 나머지 9개 ID마다 촬영본 6장을 미세조정에, 2장을 새 촬영본 평가에 사용합니다. 개발 단계에서는 각 ID의 6장 중 5장으로 후보를 학습하고 1장으로 설정과 임계값을 선택합니다. 선택 후에는 6장 전체로 다시 학습합니다.
+
+최종 평가에서는 학습에 사용한 ID마다 학습용 원본 1장으로 등록하고 남겨둔 2장으로 비교합니다. 마지막 ID는 첫 원본으로 새로 등록하고 나머지 7장을 본인 및 다른 9개 ID의 등록 템플릿과 비교합니다. 실험은 같은 50:50 정합 가중치로 기준 모델과 학습 후보를 평가합니다. 현재 DLL의 22:78 결과는 참고값으로 기록합니다.
+
+학습과 검증의 증강은 노이즈 `σ=2, 5, 10, 20, 30`, 회전 `±5°, ±10°`, 밝기 `±15`를 사용합니다. 같은 노이즈 강도에서는 시드 42·43의 지표를 먼저 평균하고, 결과를 회전·밝기를 포함한 11개 설정에 같은 비중으로 평균합니다. `evaluation.csv`는 원본 결과와 증강 평균 EER·FMR·FNMR을 각각 한 행으로 저장합니다. 증강 평균 행의 비교 쌍 수는 16개 영상 변형에서 비교한 건수의 합입니다. [증강 설정](src/experiments/fvc_augmentation.json)
+
+캐시는 [임베딩 캐시 도구](tools/deepprint/cache_fvc_embeddings.py)에 `--robustness` 증강 폴더와 시드별 `20 30` 노이즈 증강 폴더 두 개를 각각 `--augmentation`으로 넘겨 생성합니다. 기존 `fvc-noise40-cache`도 사용할 수 있으며 이 실험은 설정 파일에 포함된 조건만 읽습니다. 저장소 루트에서 실행하고 매번 새 출력 경로를 지정합니다.
+
+```powershell
+$exportPython = '.\build\dependencies\export-env\Scripts\python.exe'
+& $exportPython -B tools/deepprint/finetune_last_id.py `
+  --model build/evaluator/deepprint_texminu_512.onnx `
+  --cache build/finetune/fvc-noise40-cache `
+  --output log/finetune-last-id-6-2-rerun `
+  --candidate build/finetune/finetune-last-id-6-2-rerun/deepprint_texminu_512.onnx `
+  --dll build/evaluator/IndustryAlgorithm.dll
+```
+
+실험 로그에는 촬영본 분할, 개발 점수, 원본·증강 평균 지표, C++ DLL 템플릿 검증이 기록됩니다. [σ=30 증강 평균 결과](log/finetune-last-id-sigma30-mean-20261125-053138/evaluation.csv) · [이전 σ=40 실행 결과](log/finetune-last-id-6-2-20261125-051916/evaluation.csv)
+
+## FVC2004 영역 자르기
+
+평가 앱이 시작할 때 기본으로 선택하는 `build/evaluator/IndustryAlgorithm.dll`은 `iType=3` 영상의 지문 영역을 자른 뒤 패딩과 리사이즈를 적용합니다. 전경이 충분히 검출되지 않으면 전체 프레임을 사용합니다. VS Code와 PowerShell 빌드는 `FINGERPRINT_FVC2004_ROI=ON`을 사용합니다.
+
+기존 전체 프레임 방식이 필요하면 별도 빌드 디렉터리에서 `-DFINGERPRINT_FVC2004_ROI=OFF`를 지정합니다. 두 빌드 모두 같은 사전학습 ONNX와 22:78 정합 가중치를 사용합니다. 영역 자르기를 활성화한 기준 벡터 테스트는 `build/models/parity/3.roi.*.f32`도 읽습니다. 빌드 준비 단계의 모델 내보내기 명령이 이 파일들을 생성합니다. [활성화 전 C++ DLL 비교](log/fvc2004-roi-validation-20261125/conclusion.txt)
 
 ## 평가 보고서
 

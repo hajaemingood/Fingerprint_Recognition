@@ -1,0 +1,9 @@
+database,scorer,group,mode,genuine_pairs,impostor_pairs,eer,threshold,fmr,fnmr
+FVC2004_DB1_B,standard,confirmation,standard_development_threshold,140,640,0.08660714285714285,0.966,0.0,0.65
+FVC2004_DB1_B,standard,confirmation,observed_fmr_cap,140,640,0.08660714285714285,0.945,0.009375,0.38571428571428573
+FVC2004_DB1_B,standard,last_id,standard_development_threshold,7,63,0.14285714285714285,0.966,0.0,1.0
+FVC2004_DB1_B,standard,last_id,observed_fmr_cap,7,63,0.14285714285714285,0.945,0.0,1.0
+FVC2004_DB1_B,roi,confirmation,standard_development_threshold,140,640,0.044084821428571425,0.966,0.0,0.7714285714285715
+FVC2004_DB1_B,roi,confirmation,observed_fmr_cap,140,640,0.044084821428571425,0.89,0.009375,0.2357142857142857
+FVC2004_DB1_B,roi,last_id,standard_development_threshold,7,63,0.03968253968253968,0.966,0.0,1.0
+FVC2004_DB1_B,roi,last_id,observed_fmr_cap,7,63,0.03968253968253968,0.897,0.0,0.2857142857142857

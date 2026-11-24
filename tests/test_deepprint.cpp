@@ -57,6 +57,16 @@ void verifyWeightedComparison()
     }
 }
 
+void verifyEmptyForegroundFallback()
+{
+    const auto format = fingerprint::imageFormat(3);
+    const std::vector<unsigned char> image(format.width * format.height, 255);
+    const auto full = fingerprint::preprocessDeepPrint(image.data(), format);
+    if (fingerprint::preprocessDeepPrint(image.data(), format, true) != full) {
+        throw std::runtime_error("Empty foreground must use the full frame");
+    }
+}
+
 } // namespace
 
 int wmain(int argc, wchar_t** argv)
@@ -66,15 +76,18 @@ int wmain(int argc, wchar_t** argv)
     }
     try {
         verifyWeightedComparison();
+        verifyEmptyForegroundFallback();
         const std::filesystem::path references = argv[1];
         for (const int type : {1, 2, 3}) {
             const auto format = fingerprint::imageFormat(type);
             const auto stem = std::to_string(type);
             auto pixels = readValues<unsigned char>(references / (stem + ".raw"),
                                                    format.width * format.height);
-            const auto input = fingerprint::preprocessDeepPrint(pixels.data(), format);
-            const auto expectedInput = readValues<float>(references / (stem + ".input.f32"), input.size());
-            const auto expected = readValues<float>(references / (stem + ".embedding.f32"),
+            const bool crop = FINGERPRINT_FVC2004_ROI && type == 3;
+            const auto input = fingerprint::preprocessDeepPrint(pixels.data(), format, crop);
+            const auto referenceStem = crop ? stem + ".roi" : stem;
+            const auto expectedInput = readValues<float>(references / (referenceStem + ".input.f32"), input.size());
+            const auto expected = readValues<float>(references / (referenceStem + ".embedding.f32"),
                                                     fingerprint::kFeatureCount);
 
             std::vector<unsigned char> enrolled(1000000);

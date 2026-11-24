@@ -15,6 +15,11 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+if sys.flags.isolated:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from cache_fvc_embeddings import prepare_image
+
 
 UPSTREAM_REVISION = "7accfca1f33b9b42bfd220e43cd5bc13b4a7fa13"
 CHECKPOINT_SHA256 = "2683a04427bacd54adc00cfdc97474625b1e11e5a9e6672c5129f033018f8a28"
@@ -191,6 +196,13 @@ def export(args):
                 pixels.tofile(args.reference_dir / f"{image_type}.raw")
                 image.numpy().astype("<f4").tofile(args.reference_dir / f"{image_type}.input.f32")
                 expected.astype("<f4").tofile(args.reference_dir / f"{image_type}.embedding.f32")
+                if image_type == 3:
+                    roi_input = prepare_image(path, "roi")
+                    roi_expected = inference(torch.from_numpy(roi_input)).numpy()
+                    roi_actual = session.run(["embedding"], {"image": roi_input})[0]
+                    np.testing.assert_allclose(roi_actual, roi_expected, rtol=5e-5, atol=5e-5)
+                    roi_input.astype("<f4").tofile(args.reference_dir / "3.roi.input.f32")
+                    roi_expected.astype("<f4").tofile(args.reference_dir / "3.roi.embedding.f32")
             del session  # Release the model handle before renaming on Windows.
             temporary.replace(args.output)
         finally:

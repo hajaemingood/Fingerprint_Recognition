@@ -45,14 +45,19 @@ class Database:
     timings: dict
 
 
-def load_banks(directory, split):
-    rows = read_rows(split)
+def load_banks(directory, split=None, conditions=None):
+    rows = read_rows(split) if split is not None else []
+    expected = set(conditions) if conditions is not None else {"original", *STRESS}
+    if conditions is None:
+        expected.update(f"noise-{sigma:02}-s{seed}" for sigma in (2, 5, 10, 20, 30, 40) for seed in (42, 43))
     banks = {}
     for database in DATABASES:
         memberships = {int(r["finger"]): r["split"] for r in rows if r["database"] == database}
         images, timings = {}, {}
         names = None
         for path in sorted((directory / database).glob("*/*.npz")):
+            if conditions is not None and (path.parent.name != "standard" or path.stem not in expected):
+                continue
             with np.load(path, allow_pickle=False) as data:
                 if names is None:
                     names = data["names"]
@@ -65,10 +70,10 @@ def load_banks(directory, split):
         fingers = np.array([int(name.split("_", 1)[0]) for name in names])
         development = tuple(sorted(f for f, group in memberships.items() if group == "development"))
         confirmation = tuple(sorted(f for f, group in memberships.items() if group == "confirmation"))
-        if set(fingers) != set(memberships) or len(development) != 5 or len(confirmation) != 5:
+        if split is not None and (
+            set(fingers) != set(memberships) or len(development) != 5 or len(confirmation) != 5
+        ):
             raise ValueError(f"Expected five development and five confirmation IDs for {database}")
-        expected = {"original", *STRESS}
-        expected.update(f"noise-{sigma:02}-s{seed}" for sigma in (2, 5, 10, 20, 30, 40) for seed in (42, 43))
         if not expected.issubset({key for mode, key in images if mode == "standard"}):
             raise ValueError(f"Missing cached conditions for {database}")
         banks[database] = Database(names, fingers, development, confirmation, images, timings)
@@ -90,23 +95,23 @@ class ResidualProjection(nn.Module):
 
 
 class Heads(nn.Module):
-    def __init__(self, both):
+    def __init__(self, both, texture_only=False):
         super().__init__()
-        self.texture = ResidualProjection() if both else nn.Identity()
-        self.minutiae = ResidualProjection()
+        self.texture = ResidualProjection() if both or texture_only else nn.Identity()
+        self.minutiae = nn.Identity() if texture_only else ResidualProjection()
 
     def forward(self, vectors):
         return torch.cat((self.texture(vectors[:, :256]), self.minutiae(vectors[:, 256:])), dim=1)
 
     def matrices(self):
-        texture = self.texture.matrix() if isinstance(self.texture, ResidualProjection) else np.eye(256, dtype=np.float32)
-        return texture, self.minutiae.matrix()
+        return tuple(branch.matrix() if isinstance(branch, ResidualProjection) else np.eye(256, dtype=np.float32)
+                     for branch in (self.texture, self.minutiae))
 
 
-def torch_scores(a, b):
+def torch_scores(a, b, texture_weight):
     texture = (a[:, :256] * b[:, :256]).sum(dim=1)
     minutiae = (a[:, 256:] * b[:, 256:]).sum(dim=1)
-    return (1.0 + TEXTURE_WEIGHT * texture + (1.0 - TEXTURE_WEIGHT) * minutiae) * 0.5
+    return (1.0 + texture_weight * texture + (1.0 - texture_weight) * minutiae) * 0.5
 
 
 def normalized_vectors(embeddings, model):
@@ -117,9 +122,9 @@ def normalized_vectors(embeddings, model):
     return blocks / np.linalg.norm(blocks, axis=2, keepdims=True)
 
 
-def compare_vectors(first, second):
+def compare_vectors(first, second, texture_weight=TEXTURE_WEIGHT):
     cosines = np.sum(first * second, axis=2)
-    similarity = (1.0 + cosines @ np.array([TEXTURE_WEIGHT, 1.0 - TEXTURE_WEIGHT])) / 2.0
+    similarity = (1.0 + cosines @ np.array([texture_weight, 1.0 - texture_weight])) / 2.0
     return np.floor(np.clip(similarity, 0.0, 1.0) * 1000 + 0.5).astype(int)
 
 
@@ -155,52 +160,66 @@ def evaluation_objective(banks, validation, model):
 
 
 class Triplets:
-    def __init__(self, bank, train_fingers, database):
+    def __init__(self, bank, train_indices, database, texture_weight):
         self.images = {key: v for (mode, key), v in bank.images.items() if mode == "standard"}
-        self.ids = np.flatnonzero(np.isin(bank.fingers, train_fingers))
+        self.ids = np.asarray(train_indices)
         self.noise = sorted(key for key in self.images if key.startswith("noise"))
         self.pose = sorted(key for key in self.images if key.startswith(("rotation", "brightness")))
+        self.rotation = sorted(key for key in self.images if key.startswith("rotation"))
         self.noise_probability = NOISE_PROBABILITIES[database]
         self.positives, self.negatives = {}, {}
-        base = normalized_vectors(self.images["original"], None)
-        for i in self.ids:
-            same = bank.fingers[self.ids] == bank.fingers[i]
-            self.positives[i] = self.ids[same & (self.ids != i)]
-            other = self.ids[~same]
-            scores = compare_vectors(np.broadcast_to(base[i], base[other].shape), base[other])
-            self.negatives[i] = other[np.argsort(scores, kind="stable")[-6:]]
+        base = normalized_vectors(self.images["original"][self.ids], None)
+        fingers = bank.fingers[self.ids]
+        for index, image in enumerate(self.ids):
+            same = fingers == fingers[index]
+            self.positives[image] = self.ids[same & (self.ids != image)]
+            candidates = base[~same]
+            scores = compare_vectors(np.broadcast_to(base[index], candidates.shape), candidates, texture_weight)
+            self.negatives[image] = self.ids[~same][np.argsort(scores, kind="stable")[-6:]]
 
-    def batch(self, random, augmented, size=48):
+    def batch(self, random, augmented, size=48, augmentation_random=None):
         anchor, positive, negative = [], [], []
+        transform_random = random if augmentation_random is None else augmentation_random
         for i in random.choice(self.ids, size=size):
             key = "original"
-            if augmented and random.random() < AUGMENTED_PROBABILITY:
-                pool = self.noise if random.random() < self.noise_probability else self.pose
-                key = random.choice(pool)
+            if augmented and transform_random.random() < AUGMENTED_PROBABILITY:
+                if augmented == "rotation":
+                    pool = self.rotation
+                elif augmented == "gaussian":
+                    pool = self.noise
+                else:
+                    pool = self.noise if transform_random.random() < self.noise_probability else self.pose
+                key = transform_random.choice(pool)
             anchor.append(self.images["original"][i])
             positive.append(self.images[key][random.choice(self.positives[i])])
             negative.append(self.images[key][random.choice(self.negatives[i])])
         return tuple(torch.from_numpy(np.stack(items)) for items in (anchor, positive, negative))
 
 
-def fit(banks, training, both, augmented, seed, epochs, validate=None):
+def fit(banks, training, both, augmented, seed, epochs, validate=None, texture_weight=TEXTURE_WEIGHT,
+        *, texture_only=False, augmentation_seed=None, checkpoint=None):
     torch.manual_seed(seed)
     random = np.random.default_rng(seed)
-    model = Heads(both)
+    augmentation_random = np.random.default_rng(augmentation_seed) if augmentation_seed is not None else None
+    model = Heads(both, texture_only)
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.003, weight_decay=1e-4)
-    batches = [Triplets(bank, training[database], database) for database, bank in banks.items()]
+    batches = [Triplets(bank, training[database], database, texture_weight) for database, bank in banks.items()]
     best_state, best_loss, best_epoch = None, float("inf"), epochs
     for epoch in range(1, epochs + 1):
         for _ in range(4):
-            combined = [item.batch(random, augmented) for item in batches]
+            combined = [item.batch(random, augmented, augmentation_random=augmentation_random) for item in batches]
             anchor, positive, negative = (torch.cat(items) for items in zip(*combined))
             a, p, n = model(torch.cat((anchor, positive, negative))).chunk(3)
-            separation = F.relu(0.12 + torch_scores(a, n) - torch_scores(a, p)).mean()
+            separation = F.relu(
+                0.12 + torch_scores(a, n, texture_weight) - torch_scores(a, p, texture_weight)
+            ).mean()
             drift = (a - anchor).square().sum(dim=1).mean()
             loss = separation + 0.05 * drift
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+        if checkpoint is not None:
+            checkpoint(epoch, model)
         if validate is not None:
             result = validate(model)
             if result < best_loss - 1e-10:
@@ -292,7 +311,8 @@ def run_training(args):
             database: (bank.development[fold], bank.development[(fold + 1) % 5]) for database, bank in banks.items()
         }
         training = {
-            database: tuple(f for f in bank.development if f not in validation[database])
+            database: np.flatnonzero(np.isin(bank.fingers, bank.development)
+                                     & ~np.isin(bank.fingers, validation[database]))
             for database, bank in banks.items()
         }
         baseline_folds.append(evaluation_objective(banks, validation, None))
@@ -313,7 +333,7 @@ def run_training(args):
 
     best = min(candidates, key=lambda c: statistics.mean(row[2] for row in candidates[c]))
     comparator = (best[0], not best[1])
-    refit_ids = {db: bank.development for db, bank in banks.items()}
+    refit_ids = {db: np.flatnonzero(np.isin(bank.fingers, bank.development)) for db, bank in banks.items()}
     models = {"baseline": None}
     refit_epochs = {}
     oof = {scorer: {db: [] for db in banks} for scorer in ("baseline", "fine_tuned", "training_ablation")}
