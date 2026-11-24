@@ -1,0 +1,19 @@
+score_type=selected DLL similarity
+score_range=[0,1]
+template_format=opaque bytes
+template_length=actual bytes returned by selected DLL
+genuine_threshold=0.5
+impostor_threshold=0.5
+decision_rule=Genuine: score >= threshold -> PASS, below -> MISS; Impostor: score >= threshold -> FA, below -> REJ; inference failure -> ERR
+database=C:/Users/hajaemin/FinalProject/data/original/FVC2002_DB3_B
+algorithm_path=C:/Users/hajaemin/Desktop/Advanced_OOP/build/Release/IndustryAlgorithm.dll
+timeout_ms=30000
+concurrency=1
+comparison_type=Both
+template_format=opaque bytes; lengths retained
+algorithm_signature=2a581ca26a67fa21d8a7ed16d40b0ce59a8ed91d8044bc72908cf006a91eec05
+score_aggregation=selected DLL responsibility
+matching_time=KISA_Compare only
+report_metrics=FTE (%); REJ genuine (%); REJ impostor (%); FMR (%); FNMR (%); EER (%); EER* (%); ZeroFMR (%); ZeroFNMR (%); FMR100 (%); FMR1000 (%); Enrollment time (ms); Matching time (ms); Genuine time (ms); Impostor time (ms); Mean template size (bytes); Max template size (bytes)
+genuine_rule=All eligible images
+impostor_rule=All eligible images

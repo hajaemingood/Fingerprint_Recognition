@@ -4,36 +4,27 @@ project(IndustryAlgorithm LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-option(FINGERPRINT_DEEPPRINT "Build the KISA DLL with the DeepPrint ONNX model" OFF)
-option(FINGERPRINT_BUILD_GUI "Build the existing fingerprint comparison GUI" ON)
-set(FINGERPRINT_ONNXRUNTIME_ROOT "" CACHE PATH "Extracted Windows x64 ONNX Runtime NuGet package")
-set(FINGERPRINT_DEEPPRINT_MODEL "" CACHE FILEPATH "Exported DeepPrint ONNX model")
+option(FINGERPRINT_DEEPPRINT "Build the DeepPrint KISA DLL alongside the evaluation tools" OFF)
+option(FINGERPRINT_BUILD_GUI "Build the Windows KISA evaluation application" ON)
+set(FINGERPRINT_ONNXRUNTIME_ROOT "${CMAKE_SOURCE_DIR}/build/dependencies/onnxruntime" CACHE PATH "Extracted Windows x64 ONNX Runtime NuGet package")
+set(FINGERPRINT_DEEPPRINT_MODEL "${CMAKE_SOURCE_DIR}/build/models/deepprint_texminu_512.onnx" CACHE FILEPATH "Exported DeepPrint ONNX model")
 set(FINGERPRINT_DEEPPRINT_REFERENCE_DIR "" CACHE PATH "Reference vectors from the DeepPrint exporter")
 
-set(feature_extractor src/feature/feature_extractor.cpp)
 if(FINGERPRINT_DEEPPRINT)
-    set(feature_extractor
+    add_library(IndustryAlgorithm SHARED
+        src/api/kisa_api.cpp
         src/feature/deepprint_extractor.cpp
         src/feature/deepprint_preprocessing.cpp
+        src/matching/fingerprint_matcher.cpp
+        src/feature/template_manager.cpp
     )
-endif()
+    target_include_directories(IndustryAlgorithm PUBLIC
+        "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>" PRIVATE src)
+    set_target_properties(IndustryAlgorithm PROPERTIES PREFIX "")
+    if(MINGW)
+        target_link_options(IndustryAlgorithm PRIVATE -static -static-libstdc++)
+    endif()
 
-add_library(IndustryAlgorithm SHARED
-    src/api/kisa_api.cpp
-    ${feature_extractor}
-    src/matching/fingerprint_matcher.cpp
-    src/feature/template_manager.cpp
-)
-target_include_directories(IndustryAlgorithm PUBLIC
-    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-    PRIVATE src
-)
-set_target_properties(IndustryAlgorithm PROPERTIES PREFIX "")
-if(MINGW)
-    target_link_options(IndustryAlgorithm PRIVATE -static -static-libstdc++)
-endif()
-
-if(FINGERPRINT_DEEPPRINT)
     set(ort_include "${FINGERPRINT_ONNXRUNTIME_ROOT}/build/native/include")
     set(ort_runtime "${FINGERPRINT_ONNXRUNTIME_ROOT}/runtimes/win-x64/native")
     set(ort_dll "${ort_runtime}/onnxruntime.dll")
@@ -45,7 +36,6 @@ if(FINGERPRINT_DEEPPRINT)
         message(FATAL_ERROR "Set FINGERPRINT_DEEPPRINT_MODEL to the ONNX file from tools/deepprint/export_model.py")
     endif()
 
-    target_compile_definitions(IndustryAlgorithm PRIVATE FINGERPRINT_DEEPPRINT)
     target_include_directories(IndustryAlgorithm SYSTEM PRIVATE "${ort_include}")
     set_property(TARGET IndustryAlgorithm APPEND PROPERTY LINK_DEPENDS
         "${FINGERPRINT_DEEPPRINT_MODEL}" "${ort_dll}")
@@ -57,24 +47,8 @@ if(FINGERPRINT_DEEPPRINT)
     )
     install(FILES "${FINGERPRINT_DEEPPRINT_MODEL}" DESTINATION . RENAME deepprint_texminu_512.onnx)
     install(FILES "${ort_dll}" DESTINATION .)
+    install(TARGETS IndustryAlgorithm RUNTIME DESTINATION .)
 endif()
-
-if(FINGERPRINT_BUILD_GUI)
-    add_executable(fingerprint_compare WIN32
-        app/main.cpp
-        app/comparison_window.cpp
-        app/fingerprint_image.cpp
-    )
-    target_link_libraries(fingerprint_compare PRIVATE IndustryAlgorithm ole32 windowscodecs uuid comdlg32 gdi32)
-    if(MSVC)
-        target_compile_options(fingerprint_compare PRIVATE /utf-8)
-    elseif(MINGW)
-        target_link_options(fingerprint_compare PRIVATE -municode -static -static-libstdc++)
-    endif()
-    install(TARGETS fingerprint_compare RUNTIME DESTINATION .)
-endif()
-
-install(TARGETS IndustryAlgorithm RUNTIME DESTINATION .)
 
 add_library(fingerprint_tiff STATIC tools/fvc/fvc_dataset.cpp tools/fvc/tiff_image.cpp)
 target_include_directories(fingerprint_tiff PUBLIC tools/fvc PRIVATE include)
@@ -83,11 +57,50 @@ target_link_libraries(fingerprint_tiff PUBLIC ole32 windowscodecs uuid)
 add_library(gaussian_noise STATIC tools/noise/gaussian_noise.cpp)
 target_include_directories(gaussian_noise PUBLIC tools/noise)
 
+add_library(fingerprint_augmentation STATIC tools/noise/image_transform.cpp)
+target_include_directories(fingerprint_augmentation PUBLIC tools/noise)
+target_link_libraries(fingerprint_augmentation PUBLIC fingerprint_tiff PRIVATE gaussian_noise)
+
 add_library(verification_metrics STATIC tools/evaluation/verification_metrics.cpp)
 target_include_directories(verification_metrics PUBLIC tools/evaluation)
 
+if(FINGERPRINT_BUILD_GUI)
+    add_library(fingerprint_evaluation STATIC
+        app/evaluation/plan.cpp
+        app/evaluation/worker.cpp
+        app/evaluation/run.cpp
+        app/evaluation/report.cpp)
+    target_include_directories(fingerprint_evaluation PUBLIC app)
+    target_link_libraries(fingerprint_evaluation PUBLIC fingerprint_tiff verification_metrics)
+
+    add_executable(fingerprint_worker app/evaluation/worker_main.cpp)
+    target_include_directories(fingerprint_worker PRIVATE include)
+    target_link_libraries(fingerprint_worker PRIVATE fingerprint_evaluation)
+    if(CMAKE_SIZEOF_VOID_P EQUAL 4)
+        set(worker_suffix x86)
+    elseif(CMAKE_CXX_COMPILER_ARCHITECTURE_ID STREQUAL "ARM64"
+           OR CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|arm64|aarch64)$")
+        set(worker_suffix arm64)
+    else()
+        set(worker_suffix x64)
+    endif()
+    set_target_properties(fingerprint_worker PROPERTIES OUTPUT_NAME "fingerprint_worker_${worker_suffix}")
+
+    add_executable(fingerprint_compare WIN32 app/main.cpp app/evaluation_window.cpp)
+    target_link_libraries(fingerprint_compare PRIVATE fingerprint_evaluation comctl32 comdlg32 gdi32 shell32)
+    add_dependencies(fingerprint_compare fingerprint_worker)
+    if(MSVC)
+        target_compile_options(fingerprint_evaluation PRIVATE /utf-8)
+        target_compile_options(fingerprint_compare PRIVATE /utf-8)
+    elseif(MINGW)
+        target_link_options(fingerprint_worker PRIVATE -municode -static)
+        target_link_options(fingerprint_compare PRIVATE -municode -static -static-libstdc++)
+    endif()
+    install(TARGETS fingerprint_compare fingerprint_worker RUNTIME DESTINATION .)
+endif()
+
 add_executable(augment_fvc tools/noise/main.cpp)
-target_link_libraries(augment_fvc PRIVATE fingerprint_tiff gaussian_noise)
+target_link_libraries(augment_fvc PRIVATE fingerprint_augmentation gaussian_noise)
 add_executable(evaluate_noise tools/evaluation/noise_evaluation.cpp)
 target_include_directories(evaluate_noise PRIVATE include)
 target_link_libraries(evaluate_noise PRIVATE fingerprint_tiff verification_metrics)
@@ -98,24 +111,32 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+    if(FINGERPRINT_BUILD_GUI)
+        add_library(evaluation_fixture SHARED tests/evaluation_fixture.cpp)
+        target_include_directories(evaluation_fixture PRIVATE include)
+        add_executable(test_evaluation tests/test_evaluation.cpp)
+        target_link_libraries(test_evaluation PRIVATE fingerprint_evaluation)
+        add_dependencies(test_evaluation fingerprint_worker evaluation_fixture)
+        if(MSVC)
+            target_compile_options(test_evaluation PRIVATE /utf-8)
+        elseif(MINGW)
+            target_link_options(evaluation_fixture PRIVATE -static)
+            target_link_options(test_evaluation PRIVATE -municode -static)
+        endif()
+        add_test(NAME evaluation_workflow COMMAND test_evaluation "$<TARGET_FILE:evaluation_fixture>"
+                 "${CMAKE_CURRENT_SOURCE_DIR}/data/fvc")
+        set_tests_properties(evaluation_workflow PROPERTIES TIMEOUT 20)
+    endif()
     add_executable(test_noise tests/test_noise.cpp)
-    target_link_libraries(test_noise PRIVATE gaussian_noise verification_metrics)
+    target_link_libraries(test_noise PRIVATE gaussian_noise fingerprint_augmentation verification_metrics)
     if(MINGW)
         target_link_options(test_noise PRIVATE -static)
     endif()
     add_test(NAME noise_and_metrics COMMAND test_noise)
 
-    if(NOT FINGERPRINT_DEEPPRINT)
-        add_executable(test_pipeline tests/test_pipeline.cpp)
-        target_link_libraries(test_pipeline PRIVATE IndustryAlgorithm)
-        if(MINGW)
-            target_link_options(test_pipeline PRIVATE -static -static-libstdc++)
-        endif()
-        add_test(NAME fingerprint_pipeline COMMAND test_pipeline)
-    elseif(FINGERPRINT_DEEPPRINT_REFERENCE_DIR)
+    if(FINGERPRINT_DEEPPRINT AND FINGERPRINT_DEEPPRINT_REFERENCE_DIR)
         add_executable(test_deepprint tests/test_deepprint.cpp
             src/feature/deepprint_preprocessing.cpp src/feature/template_manager.cpp)
-        target_compile_definitions(test_deepprint PRIVATE FINGERPRINT_DEEPPRINT)
         target_include_directories(test_deepprint PRIVATE src)
         target_link_libraries(test_deepprint PRIVATE IndustryAlgorithm)
         if(MINGW)

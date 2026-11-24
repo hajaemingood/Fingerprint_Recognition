@@ -2,13 +2,13 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Create build directory",
+      "label": "Configure DeepPrint and evaluation app",
       "type": "process",
       "command": "powershell",
       "args": [
         "-NoProfile",
         "-Command",
-        "New-Item -ItemType Directory -Force -Path 'build/Release' | Out-Null"
+        "$cmake = Get-Command cmake.exe -ErrorAction SilentlyContinue; $cmakePath = if ($cmake) { $cmake.Source } else { 'build/dependencies/python/Lib/site-packages/cmake/data/bin/cmake.exe' }; & $cmakePath -S . -B build/evaluator -G 'MinGW Makefiles' -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=C:/msys64/ucrt64/bin/g++.exe -DCMAKE_MAKE_PROGRAM=C:/msys64/ucrt64/bin/mingw32-make.exe -DFINGERPRINT_DEEPPRINT=ON -DFINGERPRINT_BUILD_GUI=ON -DFINGERPRINT_DEEPPRINT_REFERENCE_DIR=build/models/parity; exit $LASTEXITCODE"
       ],
       "options": {
         "cwd": "${workspaceFolder}"
@@ -16,84 +16,18 @@
       "problemMatcher": []
     },
     {
-      "label": "Build fingerprint DLL",
+      "label": "Build DeepPrint and evaluation app",
       "type": "process",
-      "command": "C:\\msys64\\ucrt64\\bin\\g++.exe",
+      "command": "powershell",
       "args": [
-        "-std=c++17",
-        "-g",
-        "-shared",
-        "-static",
-        "-static-libstdc++",
-        "-Iinclude",
-        "-Isrc",
-        "src/api/kisa_api.cpp",
-        "src/feature/feature_extractor.cpp",
-        "src/feature/template_manager.cpp",
-        "src/matching/fingerprint_matcher.cpp",
-        "-Wl,--out-implib,build/Release/libIndustryAlgorithm.dll.a",
-        "-o",
-        "build/Release/IndustryAlgorithm.dll"
+        "-NoProfile",
+        "-Command",
+        "$cmake = Get-Command cmake.exe -ErrorAction SilentlyContinue; $cmakePath = if ($cmake) { $cmake.Source } else { 'build/dependencies/python/Lib/site-packages/cmake/data/bin/cmake.exe' }; & $cmakePath --build build/evaluator --config Release --parallel; exit $LASTEXITCODE"
       ],
       "options": {
         "cwd": "${workspaceFolder}"
       },
-      "dependsOn": "Create build directory",
-      "problemMatcher": [
-        "$gcc"
-      ]
-    },
-    {
-      "label": "Build fingerprint pipeline",
-      "type": "process",
-      "command": "C:\\msys64\\ucrt64\\bin\\g++.exe",
-      "args": [
-        "-std=c++17",
-        "-g",
-        "-static",
-        "-static-libstdc++",
-        "-Iinclude",
-        "tests/test_pipeline.cpp",
-        "build/Release/libIndustryAlgorithm.dll.a",
-        "-o",
-        "build/Release/test_pipeline.exe"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "dependsOn": "Build fingerprint DLL",
-      "problemMatcher": [
-        "$gcc"
-      ]
-    },
-    {
-      "label": "Build fingerprint comparison app",
-      "type": "process",
-      "command": "C:\\msys64\\ucrt64\\bin\\g++.exe",
-      "args": [
-        "-std=c++17",
-        "-g",
-        "-mwindows",
-        "-municode",
-        "-static",
-        "-static-libstdc++",
-        "-Iinclude",
-        "app/main.cpp",
-        "app/comparison_window.cpp",
-        "app/fingerprint_image.cpp",
-        "build/Release/libIndustryAlgorithm.dll.a",
-        "-lole32",
-        "-lwindowscodecs",
-        "-luuid",
-        "-lcomdlg32",
-        "-lgdi32",
-        "-o",
-        "build/Release/fingerprint_compare.exe"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "dependsOn": "Build fingerprint pipeline",
+      "dependsOn": "Configure DeepPrint and evaluation app",
       "problemMatcher": [
         "$gcc"
       ],
@@ -101,20 +35,6 @@
         "kind": "build",
         "isDefault": true
       }
-    },
-    {
-      "label": "Build DeepPrint DLL and noise tools",
-      "type": "process",
-      "command": "powershell",
-      "args": [
-        "-NoProfile",
-        "-Command",
-        "$cmake = Get-Command cmake.exe -ErrorAction SilentlyContinue; $cmakePath = if ($cmake) { $cmake.Source } else { 'build/dependencies/python/Lib/site-packages/cmake/data/bin/cmake.exe' }; & $cmakePath --build build/deepprint --config Release --parallel; exit $LASTEXITCODE"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": ["$gcc"]
     }
   ]
 }

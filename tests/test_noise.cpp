@@ -1,8 +1,49 @@
 #include "gaussian_noise.h"
+#include "image_transform.h"
 #include "verification_metrics.h"
 
 #include <cmath>
 #include <iostream>
+
+namespace {
+
+bool checkImageTransforms()
+{
+    const fvc::GrayImage source{1, 3, 3, {0, 10, 20, 30, 40, 50, 60, 245, 255}};
+    auto brighter = source;
+    fvc::Brightness(15).apply(brighter, 0);
+    auto darker = source;
+    fvc::Brightness(-15).apply(darker, 0);
+    auto flipped = source;
+    fvc::HorizontalFlip().apply(flipped, 0);
+    auto rotated = source;
+    const fvc::Rotation rotation(90);
+    const fvc::ImageTransform& transform = rotation;
+    transform.apply(rotated, 0);
+
+    return brighter.pixels == std::vector<unsigned char>{15, 25, 35, 45, 55, 65, 75, 255, 255}
+        && darker.pixels == std::vector<unsigned char>{0, 0, 5, 15, 25, 35, 45, 230, 240}
+        && flipped.pixels == std::vector<unsigned char>{20, 10, 0, 50, 40, 30, 255, 245, 60}
+        && rotated.pixels == std::vector<unsigned char>{20, 50, 255, 10, 40, 245, 0, 30, 60}
+        && rotated.width == source.width && rotated.height == source.height
+        && rotated.type == source.type;
+}
+
+bool checkOperatingPoints()
+{
+    const std::vector<VerificationScore> scores{{0.9, true}, {0.75, false}, {0.3, true}, {0.2, false}};
+    const VerificationCounts totals{3, 3};
+    const auto exact = equalErrorOperatingPoint(scores, totals);
+    const auto rates = ratesAtThreshold(scores, totals, 0.75);
+    const auto estimated = equalErrorOperatingPoint({{0.8, true}, {0.7, false}, {0.4, true}}, {3, 1});
+    return exact && exact->threshold == 0.3 && exact->averageError() == 1.0 / 3.0
+        && rates && rates->fmr == 1.0 / 3.0 && rates->fnmr == 2.0 / 3.0
+        && estimated && estimated->threshold == 0.8 && estimated->averageError() == 1.0 / 3.0
+        && !equalErrorOperatingPoint({{0.9, true}}, {2, 1})
+        && !ratesAtThreshold(scores, {3, 0}, 0.75);
+}
+
+} // namespace
 
 int main()
 {
@@ -55,5 +96,9 @@ int main()
         std::cerr << "EER threshold handling failed\n";
         return 1;
     }
-    std::cout << "Noise and EER checks passed\n";
+    if (!checkImageTransforms() || !checkOperatingPoints()) {
+        std::cerr << "Image transformation or robustness metric check failed\n";
+        return 1;
+    }
+    std::cout << "Image transformation and metric checks passed\n";
 }

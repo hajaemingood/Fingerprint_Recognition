@@ -1,23 +1,15 @@
 #include "fvc_dataset.h"
-#include "kisa_api.h"
+#include "kisa_library.h"
 #include "tiff_image.h"
 #include "verification_metrics.h"
-
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
 
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
-#include <cstring>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <memory>
-#include <type_traits>
 #include <utility>
 
 namespace {
@@ -25,47 +17,6 @@ namespace {
 namespace fs = std::filesystem;
 using Clock = std::chrono::steady_clock;
 constexpr std::size_t kTemplateCapacity = 1000000;
-
-struct ReleaseLibrary {
-    void operator()(HMODULE module) const { FreeLibrary(module); }
-};
-
-class KisaLibrary {
-private:
-    std::unique_ptr<std::remove_pointer_t<HMODULE>, ReleaseLibrary> module_;
-
-    template <class Function>
-    Function find(const char* name)
-    {
-        const auto address = GetProcAddress(module_.get(), name);
-        if (!address) {
-            throw std::runtime_error(std::string("Missing DLL export: ") + name);
-        }
-        Function function = nullptr;
-        static_assert(sizeof(function) == sizeof(address));
-        std::memcpy(&function, &address, sizeof(address));
-        return function;
-    }
-
-public:
-    explicit KisaLibrary(const fs::path& path)
-        : module_(LoadLibraryExW(fs::absolute(path).c_str(), nullptr,
-                                 LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32))
-    {
-        if (!module_) {
-            const auto error = GetLastError();
-            throw std::runtime_error("Cannot load " + path.u8string() + " (Windows error "
-                                     + std::to_string(error) + ")");
-        }
-        enroll = find<decltype(enroll)>("KISA_Enroll");
-        attempt = find<decltype(attempt)>("KISA_Attempt");
-        compare = find<decltype(compare)>("KISA_Compare");
-    }
-
-    decltype(&KISA_Enroll) enroll;
-    decltype(&KISA_Attempt) attempt;
-    decltype(&KISA_Compare) compare;
-};
 
 struct TemplateResult {
     std::vector<unsigned char> bytes;
@@ -174,7 +125,14 @@ void writeMean(std::ostream& out, double total, std::size_t count)
     }
 }
 
-bool evaluateDatabase(const KisaLibrary& dll, const fs::path& originalRoot, const fs::path& noiseRoot,
+void writeSigma(std::ostream& out, const fvc::Condition& condition)
+{
+    if (condition.kind == fvc::TransformKind::Original || condition.kind == fvc::TransformKind::Gaussian) {
+        out << condition.parameter;
+    }
+}
+
+bool evaluateDatabase(const KisaLibrary& dll, const fs::path& originalRoot, const fs::path& augmentationRoot,
                       const std::vector<fvc::Sample>& samples, const fvc::Manifest& manifest,
                       std::size_t first, std::size_t last, std::ostream& pairs, std::ostream& summary)
 {
@@ -194,13 +152,15 @@ bool evaluateDatabase(const KisaLibrary& dll, const fs::path& originalRoot, cons
     }
 
     bool complete = true;
-    for (const auto& level : manifest.bySigma) {
-        const int sigma = level.first;
+    std::optional<double> referenceThreshold;
+    for (const auto& level : manifest.conditions) {
+        const auto& condition = level.first;
         const auto& variants = level.second;
+        const bool original = condition.kind == fvc::TransformKind::Original;
         std::vector<TemplateResult> probes;
         ImageStats attemptStats;
         for (std::size_t i = first; i < last; ++i) {
-            auto image = fvc::readTiff((sigma == 0 ? originalRoot : noiseRoot) / variants[i].relativePath);
+            auto image = fvc::readTiff((original ? originalRoot : augmentationRoot) / variants[i].relativePath);
             if (image.type != imageType) {
                 throw std::runtime_error("Probe image size differs from its FVC database");
             }
@@ -212,15 +172,38 @@ bool evaluateDatabase(const KisaLibrary& dll, const fs::path& originalRoot, cons
             for (std::size_t j = i + 1; j < last; ++j) {
                 const bool genuine = samples[i].finger == samples[j].finger;
                 pairs << database << ',' << samples[i].relativePath.generic_u8string()
-                      << ',' << variants[j].relativePath.generic_u8string() << ',' << genuine
-                      << ',' << sigma << ',' << manifest.baseSeed << ',' << variants[j].seed << ',';
+                      << ',' << variants[j].relativePath.generic_u8string() << ',' << genuine << ',';
+                writeSigma(pairs, condition);
+                pairs << ',' << condition.baseSeed << ',' << variants[j].seed << ',';
                 evaluatePair(dll, enrolled[i - first], probes[j - first], genuine, stats, pairs);
+                if (manifest.robustness) {
+                    pairs << ',' << fvc::transformName(condition.kind) << ',' << condition.parameter
+                          << ',' << samples[j].relativePath.generic_u8string();
+                }
                 pairs << '\n';
             }
         }
 
-        const auto eer = equalErrorRate(std::move(stats.scores));
-        summary << database << ',' << sigma << ',' << manifest.baseSeed << ',' << count
+        std::optional<double> eer;
+        std::optional<VerificationRates> referenceRates;
+        if (manifest.robustness) {
+            const VerificationCounts totals{stats.genuinePairs, stats.impostorPairs};
+            const auto point = equalErrorOperatingPoint(stats.scores, totals);
+            if (point) {
+                eer = point->averageError();
+                if (original) {
+                    referenceThreshold = point->threshold;
+                }
+            }
+            if (referenceThreshold) {
+                referenceRates = ratesAtThreshold(stats.scores, totals, *referenceThreshold);
+            }
+        } else {
+            eer = equalErrorRate(std::move(stats.scores));
+        }
+        summary << database << ',';
+        writeSigma(summary, condition);
+        summary << ',' << condition.baseSeed << ',' << count
                 << ',' << stats.genuinePairs << ',' << stats.impostorPairs
                 << ',' << stats.genuineScored << ',' << stats.impostorScored
                 << ',' << enrollmentStats.failures << ',' << attemptStats.failures
@@ -243,9 +226,25 @@ bool evaluateDatabase(const KisaLibrary& dll, const fs::path& originalRoot, cons
                   count - enrollmentStats.failures);
         summary << ',';
         writeMean(summary, static_cast<double>(attemptStats.templateBytes), count - attemptStats.failures);
+        if (manifest.robustness) {
+            summary << ',' << fvc::transformName(condition.kind) << ',' << condition.parameter << ',';
+            if (referenceRates) {
+                summary << *referenceThreshold << ',' << referenceRates->fmr << ',' << referenceRates->fnmr;
+            } else {
+                summary << "NA,NA,NA";
+            }
+        }
         summary << '\n';
-        std::cout << database << " sigma " << sigma << ": "
-                  << stats.genuineScored + stats.impostorScored << " scored pairs";
+        std::cout << database << ' ';
+        if (manifest.robustness) {
+            std::cout << fvc::transformName(condition.kind) << ' ' << condition.parameter;
+            if (condition.kind == fvc::TransformKind::Gaussian) {
+                std::cout << " seed " << condition.baseSeed;
+            }
+        } else {
+            std::cout << "sigma " << condition.parameter;
+        }
+        std::cout << ": " << stats.genuineScored + stats.impostorScored << " scored pairs";
         if (eer) {
             std::cout << ", EER " << 100.0 * *eer << '%';
         } else {
@@ -267,22 +266,26 @@ int wmain(int argc, wchar_t** argv)
 
     try {
         const fs::path originals = argv[1];
-        const fs::path noise = argv[2];
+        const fs::path augmentation = argv[2];
         const fs::path results = argv[4];
         const auto samples = fvc::scanDataset(originals);
-        const auto manifest = fvc::readManifest(noise / "manifest.csv", samples);
+        const auto manifest = fvc::readManifest(augmentation / "manifest.csv", samples);
         const KisaLibrary dll(argv[3]);
         fvc::createOutputDirectory(results);
         std::ofstream pairs(results / "pairs.csv.tmp");
         std::ofstream summary(results / "summary.csv.tmp");
         pairs.exceptions(std::ios::failbit | std::ios::badbit);
         summary.exceptions(std::ios::failbit | std::ios::badbit);
-        pairs << "database,enrolled,probe,genuine,sigma,base_seed,seed,status,score,error_code,error_message\n"
-              << std::setprecision(9);
+        pairs << "database,enrolled,probe,genuine,sigma,base_seed,seed,status,score,error_code,error_message";
         summary << "database,sigma,base_seed,images,genuine_pairs,impostor_pairs,genuine_scored,impostor_scored,"
                    "enroll_failed,attempt_failed,compare_failed,eer,fte,fta,mean_enroll_ms,mean_attempt_ms,"
-                   "mean_compare_ms,mean_enroll_bytes,mean_attempt_bytes\n"
-                << std::setprecision(9);
+                   "mean_compare_ms,mean_enroll_bytes,mean_attempt_bytes";
+        if (manifest.robustness) {
+            pairs << ",transform,parameter,probe_original";
+            summary << ",transform,parameter,reference_threshold,fmr_at_reference,fnmr_at_reference";
+        }
+        pairs << '\n' << std::setprecision(9);
+        summary << '\n' << std::setprecision(9);
 
         bool complete = true;
         for (std::size_t first = 0; first < samples.size();) {
@@ -290,7 +293,7 @@ int wmain(int argc, wchar_t** argv)
             while (last < samples.size() && samples[last].database == samples[first].database) {
                 ++last;
             }
-            complete = evaluateDatabase(dll, originals, noise, samples, manifest, first, last, pairs, summary)
+            complete = evaluateDatabase(dll, originals, augmentation, samples, manifest, first, last, pairs, summary)
                        && complete;
             first = last;
         }
