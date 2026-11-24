@@ -104,9 +104,15 @@ target_link_libraries(augment_fvc PRIVATE fingerprint_augmentation gaussian_nois
 add_executable(evaluate_noise tools/evaluation/noise_evaluation.cpp)
 target_include_directories(evaluate_noise PRIVATE include)
 target_link_libraries(evaluate_noise PRIVATE fingerprint_tiff verification_metrics)
+
+add_executable(tune_weights tools/evaluation/weight_tuning.cpp
+    src/matching/fingerprint_matcher.cpp src/feature/template_manager.cpp)
+target_include_directories(tune_weights PRIVATE src)
+target_link_libraries(tune_weights PRIVATE fingerprint_tiff verification_metrics)
 if(MINGW)
     target_link_options(augment_fvc PRIVATE -municode -static)
     target_link_options(evaluate_noise PRIVATE -municode -static)
+    target_link_options(tune_weights PRIVATE -municode -static)
 endif()
 
 include(CTest)

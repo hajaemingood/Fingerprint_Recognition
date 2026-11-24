@@ -15,12 +15,12 @@ constexpr unsigned char kDeepPrintHeader[] = {'D', 'P', 'T', 'M', 1, 0, 0, 2};
 int encodeTemplate(const Features& features, unsigned char* output)
 {
     constexpr auto payloadSize = kFeatureCount * sizeof(float);
-    constexpr auto templateSize = sizeof(kDeepPrintHeader) + payloadSize;
+    static_assert(kTemplateSize == sizeof(kDeepPrintHeader) + payloadSize, "DeepPrint template size");
     static_assert(sizeof(float) == 4 && kFeatureCount == 512, "DeepPrint template format");
-    static_assert(templateSize < 1000000, "KISA template size limit");
+    static_assert(kTemplateSize < 1000000, "KISA template size limit");
     std::memcpy(output, kDeepPrintHeader, sizeof(kDeepPrintHeader));
     std::memcpy(output + sizeof(kDeepPrintHeader), features.data(), payloadSize);
-    return static_cast<int>(templateSize);
+    return static_cast<int>(kTemplateSize);
 }
 
 bool decodeTemplate(const unsigned char* input, Features& features)

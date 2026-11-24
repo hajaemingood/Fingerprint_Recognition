@@ -63,7 +63,8 @@ Advanced_OOP/
 │   └── evaluation/
 │       ├── kisa_library.h            # 공용 DLL 로더
 │       ├── verification_metrics.{h,cpp}
-│       └── noise_evaluation.cpp      # evaluate_noise 실행 진입점
+│       ├── noise_evaluation.cpp      # evaluate_noise 실행 진입점
+│       └── weight_tuning.cpp         # 저장 템플릿 기반 정합 가중치 실험
 ├── tests/
 │   ├── evaluation_fixture.cpp        # 평가기 오류 감지용 테스트 DLL
 │   ├── test_evaluation.cpp           # 조합·병렬·중단·보고서 검증
@@ -82,6 +83,7 @@ Advanced_OOP/
 │   └── histogram/
 │       ├── builds/                   # 구형 Release·noise-baseline 빌드 (Git 제외)
 │       └── runs/                     # run_1 및 이전 히스토그램 평가 기록
+├── log/                              # 가중치 실험 설정, 데이터 분할, 결과
 └── build/                            # EXE, DLL, 모델, 증강과 평가 결과 (Git 제외)
 ```
 
@@ -157,6 +159,7 @@ $cmake = if ($installedCmake) { $installedCmake.Source } else {
 | `IndustryAlgorithm.dll` | DeepPrint의 KISA 함수 구현 |
 | `deepprint_texminu_512.onnx`, `onnxruntime.dll` | DeepPrint 모델과 추론 런타임 |
 | `augment_fvc.exe`, `evaluate_noise.exe` | 영상 증강과 명령줄 일괄 평가 |
+| `tune_weights.exe` | 저장된 DeepPrint 템플릿으로 질감·특징점 가중치 비교 |
 
 평가기가 워커를 찾을 수 있도록 두 EXE를 같은 폴더에 둡니다. DeepPrint DLL을 복사할 때는 ONNX 모델과 런타임 DLL도 DeepPrint DLL 옆에 둡니다.
 
@@ -235,7 +238,7 @@ CMD에서는 `start "" ".\reports\fingerprint_evaluation.html"`을 사용합니�
 
 ## DeepPrint DLL과 노이즈 평가
 
-DeepPrint DLL은 FVC 회색조 픽셀을 흰색 패딩과 안티앨리어싱 리사이즈로 `299×299`에 맞춘 뒤, ONNX 모델에서 `flx`의 FVC 이진화와 추론을 수행합니다. 질감 256개와 minutiae 256개를 합친 벡터는 형식 헤더를 포함해 2,056바이트입니다. 비교 시 코사인 유사도를 `0~1`로 변환하고 소수점 셋째 자리까지 반환합니다. KISA 공개 함수 세 개의 시그니처는 기존과 동일합니다.
+DeepPrint DLL은 FVC 회색조 픽셀을 흰색 패딩과 안티앨리어싱 리사이즈로 `299×299`에 맞춘 뒤, ONNX 모델에서 `flx`의 FVC 이진화와 추론을 수행합니다. 질감 256개와 minutiae 256개를 합친 벡터는 형식 헤더를 포함해 2,056바이트입니다. 비교 시 두 분기의 코사인 점수를 각각 `0~1`로 변환한 뒤 질감 0.22와 특징점 0.78의 가중합을 소수점 셋째 자리까지 반환합니다. [정합 가중치 정의](src/matching/fingerprint_matcher.h)
 
 ### DeepPrint 최초 빌드 준비
 
@@ -290,13 +293,27 @@ Expand-Archive build/dependencies/onnxruntime.zip -DestinationPath build/depende
 
 평가기에서 원본으로 등록하고 같은 지문 쌍을 조건마다 비교합니다. `pairs.csv`의 `transform`, `parameter`, `probe_original`로 각 결과가 어느 원본과 변환에 해당하는지 볼 수 있습니다. `summary.csv`에는 조건별 과제 EER과 DB별 원본 EER에서 선택한 임계값(`reference_threshold`)의 FMR·FNMR이 기록됩니다.
 
+## 정합 가중치 실험
+
+단일 워커로 완료한 원본 평가의 `pairs.csv`와 저장 템플릿을 사용합니다. 아래는 FVC 원본 9,480쌍으로 다시 실행하는 예시입니다. 출력 폴더에는 새 이름을 지정합니다.
+
+```powershell
+$run = 'run-1795498198097-1824-1'
+.\build\evaluator\tune_weights.exe data/fvc "build/app-results/logs/$run/pairs.csv" `
+  "build/app-results/templates/$run/worker-1" log/weight-tuning-rerun
+```
+
+도구는 손가락 ID를 시드 42로 나누고, 개발 데이터에서 질감 가중치 0.00~1.00을 0.01 간격으로 시험합니다. 개발 데이터의 DB별 EER 평균으로 후보를 선택하고, 확인 데이터에서 기존 연결 코사인과 선택한 가중치를 비교합니다. 운영 임계값은 개발 단계에서 각 DB의 FMR이 1% 이하인 최소 공통 값으로 정합니다.
+
+`log/`의 실험 폴더에서 `split.csv`는 손가락별 분할, `development.csv`는 가중치 후보별 결과, `comparison.csv`는 확인·전체 결과, `summary.txt`는 입력 경로와 선택 기준을 기록합니다. CSV의 오류율 단위는 0~1입니다. [22:78 실험 기록](log/weight-tuning-20261124-164133/summary.txt)
+
 ## 평가 보고서
 
 평가 앱에서 선택한 인식 지표, 실패율, 처리 시간, 템플릿 크기는 완료된 실행의 HTML에 기록됩니다. [최신 평가 보고서](reports/fingerprint_evaluation.html)
 
 이전 원본·가우시안 노이즈 실험에서 생성한 그래프는 `reports/assets/`에 있습니다. [점수 분포](reports/assets/score-distributions.svg) · [DET](reports/assets/det-curves.svg) · [임계값별 오류율](reports/assets/threshold-curves.svg)
 
-| 원본 DB | DeepPrint EER |
+| 원본 DB | 가중치 튜닝 전 DeepPrint EER |
 | --- | ---: |
 | FVC2000 | 2.50% |
 | FVC2002 | 7.99% |

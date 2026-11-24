@@ -1,0 +1,56 @@
+{
+  "source_model_sha256": "fefd22f072db080fab8afea2050069ce04c63fa43a7ecbb1613bb65050d59fcc",
+  "scope": "FVC2002 and FVC2004; confirmation IDs held out",
+  "source_manifests": {
+    "C:\\Users\\hajaemin\\Desktop\\Advanced_OOP\\build\\augmentation\\fvc-robustness-verify": "f11ff025dae94084206ac5dfdec65cac25ad52a71038d4908f962390f1409c00",
+    "C:\\Users\\hajaemin\\Desktop\\Advanced_OOP\\build\\augmentation\\fvc-high-noise-seed42": "cf9705b512aa3380db24c28b413e13e8d37290853ed8a1af8868341b5b7a9ea9",
+    "C:\\Users\\hajaemin\\Desktop\\Advanced_OOP\\build\\augmentation\\fvc-high-noise-seed43": "9bd4c09e10708a0aa3f1caa72ca3eeffdbc3138a3aa3647a560bdfbcde69a0b1"
+  },
+  "candidate_onnx_sha256": "940480395085e8b3a13ea399b3ee770c20a9c9e0da816655917a9edaaab206e3",
+  "candidate_onnx_max_embedding_delta": 8.940696716308594e-08,
+  "candidate_heads": "minutiae",
+  "augmented_training": true,
+  "refit_epochs": {
+    "fine_tuned": 3,
+    "training_ablation": 2
+  },
+  "training_ablation_uses_augmentation": false,
+  "training": {
+    "optimizer": "AdamW",
+    "lr": 0.003,
+    "rank": 4,
+    "triplet_margin": 0.12,
+    "seed": 42,
+    "augmented_probe_probability": 0.75,
+    "noise_given_augmented_probe": {
+      "FVC2002_DB2_B": 0.75,
+      "FVC2004_DB1_B": 0.35
+    }
+  },
+  "evaluation": {
+    "texture_weight": 0.22,
+    "objective": "equal weight to clean EER and mean stress EER",
+    "stress_conditions": [
+      "noise-10-s42",
+      "noise-40-s42",
+      "noise-40-s43",
+      "rotation+10",
+      "brightness-15"
+    ],
+    "thresholds_from_out_of_fold_development": {
+      "baseline": 926,
+      "fine_tuned": 894,
+      "training_ablation": 905
+    }
+  },
+  "development_baseline_objective": 0.060636160714285715,
+  "development_selected_objective": 0.05784598214285715,
+  "preprocessing_selected_in_development": {
+    "FVC2002_DB2_B": "bilateral",
+    "FVC2004_DB1_B": "roi"
+  },
+  "baseline_parity": {
+    "verified_pairs": 6320,
+    "max_score_delta": 0.0
+  }
+}

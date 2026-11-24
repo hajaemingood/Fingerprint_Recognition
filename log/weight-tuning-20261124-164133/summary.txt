@@ -1,0 +1,18 @@
+fvc_root=C:\Users\hajaemin\Desktop\Advanced_OOP\data\fvc
+pairs_file=C:\Users\hajaemin\Desktop\Advanced_OOP\build\app-results\logs\run-1795498198097-1824-1\pairs.csv
+template_directory=C:\Users\hajaemin\Desktop\Advanced_OOP\build\app-results\templates\run-1795498198097-1824-1\worker-1
+scope=original FVC images
+split_seed=42
+weights_tested=101
+selection=lowest development macro EER; tie closest to 0.50
+operating_threshold=least threshold achieving development FMR <= 1% in every database
+rate_units=fractions
+selected_texture_weight=0.22000000
+selected_minutiae_weight=0.78000000
+development_baseline_macro_eer=0.06365327
+development_selected_macro_eer=0.05156250
+confirmation_baseline_macro_eer=0.08240327
+confirmation_selected_macro_eer=0.07860863
+all_baseline_macro_eer=0.07586806
+all_selected_macro_eer=0.07223049
+recorded_baseline_scores_verified=yes

@@ -1,8 +1,10 @@
 #include "feature/deepprint_preprocessing.h"
 #include "feature/template_manager.h"
 #include "kisa_api.h"
+#include "matching/fingerprint_matcher.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -32,6 +34,29 @@ double maximumError(const float* current, const std::vector<float>& expected)
     return error;
 }
 
+void verifyWeightedComparison()
+{
+    fingerprint::Features registered{};
+    fingerprint::Features probe{};
+    registered[0] = 1.0f;
+    registered[256] = 1.0f;
+    probe[0] = 1.0f;
+    probe[257] = 1.0f;
+    std::array<unsigned char, fingerprint::kTemplateSize> enrolled{};
+    std::array<unsigned char, fingerprint::kTemplateSize> attempted{};
+    fingerprint::encodeTemplate(registered, enrolled.data());
+    fingerprint::encodeTemplate(probe, attempted.data());
+
+    const double expected = std::round((0.5 + 0.5 * fingerprint::kTextureWeight) * 1000.0) / 1000.0;
+    int error = 0;
+    char message[256]{};
+    double actual = 0.0;
+    if (KISA_Compare(enrolled.data(), attempted.data(), &actual, &error, message) != 1
+        || std::abs(actual - expected) > 1e-12) {
+        throw std::runtime_error("KISA_Compare did not apply the configured branch weights");
+    }
+}
+
 } // namespace
 
 int wmain(int argc, wchar_t** argv)
@@ -40,6 +65,7 @@ int wmain(int argc, wchar_t** argv)
         return 2;
     }
     try {
+        verifyWeightedComparison();
         const std::filesystem::path references = argv[1];
         for (const int type : {1, 2, 3}) {
             const auto format = fingerprint::imageFormat(type);
