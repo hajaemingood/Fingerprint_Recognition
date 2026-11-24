@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>지문 인식 성능평가 보고서 · SME3007</title>
+<style>
+:root{color-scheme:light;--ink:#16252c;--muted:#465c65;--accent:#00677b;--line:#d5e1e4;--paper:#fff;--wash:#f0f7f8}
+*{box-sizing:border-box}body{margin:0;background:#f4f7f8;color:var(--ink);font-family:"Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;line-height:1.7}
+.frame{max-width:1220px;margin:0 auto;padding:0 28px 48px}header{padding:45px 0 24px;border-bottom:3px solid var(--accent)}
+h1{font-size:clamp(1.85rem,4.5vw,3rem);margin:.12em 0 .16em;line-height:1.26;letter-spacing:-.055em}
+h2{margin:0 0 12px;color:var(--accent);font-size:1.58rem;letter-spacing:-.04em}h3{font-size:1.14rem;margin:24px 0 8px}p{margin:.48em 0 1em}
+.eyebrow,.meta,figcaption,caption{color:var(--muted);font-size:.88rem}.eyebrow{letter-spacing:.04em;font-weight:700}
+section{margin:22px 0;padding:24px;background:var(--paper);border:1px solid var(--line);border-radius:12px}
+nav{margin:17px 0;display:flex;gap:.55rem 1rem;flex-wrap:wrap;font-size:.93rem}
+a{color:#006073;text-underline-offset:3px}a:focus-visible,.table-scroll:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.summary{padding:13px 16px;background:var(--wash);border-left:4px solid var(--accent);margin:12px 0}
+.table-scroll{overflow:auto;max-width:100%;margin:10px 0 15px}table{border-collapse:collapse;width:100%;font-size:.88rem;font-variant-numeric:tabular-nums}
+caption{text-align:left;padding:0 0 6px}th,td{padding:7px 10px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:nth-child(2),th:nth-child(2){text-align:left}thead{background:var(--wash)}tbody tr:nth-child(even){background:#f8fafb}
+.defs{white-space:normal}.defs th,.defs td{text-align:left;white-space:normal;vertical-align:top}.defs th[scope=row]{width:11rem}
+ul,ol{padding-left:24px}li{margin:.32em 0}code{font-family:ui-monospace,Consolas,monospace;background:#edf3f4;border-radius:3px;padding:.08em .28em}
+figure{margin:15px 0 22px}figure img{display:block;width:100%;min-width:680px;height:auto}
+.plot{overflow:auto;padding:4px;border:1px solid var(--line);background:white}figcaption{padding-top:5px}.source{font-size:.91rem}
+@media(max-width:700px){.frame{padding:0 12px 30px}header{padding-top:26px}section{padding:15px}.defs th[scope=row]{width:7rem}}
+@media print{@page{size:A4 landscape;margin:12mm}.frame{max-width:none;padding:0}body{background:white;color:black}header{padding-top:0}nav{display:none}
+section{border:none;padding:0;margin:14px 0}figure,table,h2,h3{break-inside:avoid}h2,h3{break-after:avoid}figure img{min-width:0}
+table{font-size:9pt}th,td{padding:3px 5px}a{color:black}}
+</style>
+</head>
+<body>
+<main class="frame">
+<header>
+  <div class="eyebrow">SME3007 · 고급 객체지향 프로그래밍</div>
+  <h1>지문 인식 성능평가 보고서</h1>
+  <p class="meta">DeepPrint C++ DLL 및 밝기 히스토그램 기준선 · 작성일 2026-11-23</p>
+</header>
+<nav aria-label="보고서 목차">
+  <a href="#protocol">실험 조건</a><a href="#definitions">지표 정의</a><a href="#accuracy">인식 성능</a>
+  <a href="#failures">실패·시간·크기</a><a href="#noise">노이즈 내성</a><a href="#figures">그래프</a>
+  <a href="#limits">해석과 한계</a><a href="#sources">근거 자료</a>
+</nav>
+
+<section id="protocol">
+  <h2>실험 조건</h2>
+  <p class="summary"><strong>원본 DeepPrint EER은 FVC2000 / FVC2002 / FVC2004 순으로 2.50% / 7.99% / 12.27%입니다.</strong> 세 DB에서 히스토그램 기준선보다 낮았습니다. 낮은 오수락률이 요구될 때는 아래 FMR100·FMR1000에서 본인 거부 비용을 확인할 수 있습니다.</p>
+  <ul>
+    <li>DB별 손가락 10개, 손가락당 촬영 8장으로 총 80장을 사용했습니다. 한 장으로 등록 템플릿을 만들고, DB 안에서 동일 파일을 제외한 무방향 쌍을 한 번씩 비교했습니다. DB별 본인 280쌍과 타인 2,880쌍입니다.</li>
+    <li>손가락과 촬영 번호로 정렬해 한쪽을 등록, 다른 쪽을 비교에 사용했습니다. 이 보고서의 실행은 고정 순서입니다. 과제 4쪽의 무작위 실행 순서와 timeout·crash 강제 검출 기능은 이 실측 범위 밖입니다.</li>
+    <li>원본 등록은 고정하고 비교 영상에만 가우시안 노이즈를 적용했습니다. 강도는 8비트 픽셀 기준 σ = 0, 2, 5, 10입니다. DeepPrint는 시드 42·43, 히스토그램은 시드 42로 같은 쌍을 평가했습니다. 각 실행은 DB와 강도를 합쳐 37,920건입니다.</li>
+    <li>과제의 FVC2002 DB3_B는 작업 폴더에서 <code>FVC2002_DB2_B</code>로 저장돼 있습니다. 포함된 원본 ZIP의 TIFF 80장과 내용이 일치하는 것을 확인했습니다. 세 DB의 <code>iType</code>은 각각 1, 2, 3입니다.</li>
+  </ul>
+</section>
+
+<section id="definitions">
+  <h2>지표 정의와 계산 방식</h2>
+  <p>점수 <code>s ≥ t</code>이면 일치로 판정합니다. <code>N<sub>G</sub></code>와 <code>N<sub>I</sub></code>는 사전에 정한 본인·타인 쌍의 수입니다. 운영점은 DLL의 0.001 점수 해상도에서 계산했습니다. 1.001은 모든 점수를 거부하는 경계값입니다.</p>
+  <div class="table-scroll"><table class="defs">
+    <thead><tr><th scope="col">지표</th><th scope="col">계산과 해석</th></tr></thead>
+    <tbody>
+      <tr><th scope="row">FTE</th><td>등록 실패 영상 수 ÷ 등록 시도 영상 수. 측정 로그의 실패·timeout·crash 건수를 함께 판단합니다.</td></tr>
+      <tr><th scope="row">REJ genuine / impostor</th><td>실제로 시도한 본인 또는 타인 매칭 중 처리에 실패한 비율입니다. 비교용 특징 추출 또는 점수 계산 실패를 포함하고, 등록 실패로 시도하지 못한 쌍은 분모에서 제외합니다. 임계값 때문에 거부된 유효 비교는 FNMR에 반영합니다.</td></tr>
+      <tr><th scope="row">FMR(t)</th><td>타인인데 <code>s ≥ t</code>인 쌍 ÷ <code>N<sub>I</sub></code>. 높을수록 다른 손가락을 받아들일 가능성이 큽니다.</td></tr>
+      <tr><th scope="row">FNMR(t)</th><td>(등록 실패로 처리하지 못한 본인 쌍 + 매칭 실패 본인 쌍 + <code>s &lt; t</code>인 유효 본인 쌍) ÷ <code>N<sub>G</sub></code>. 높을수록 같은 손가락의 정상 사용이 거부됩니다.</td></tr>
+      <tr><th scope="row">EER / EER*</th><td>두 오류율이 같은 관측 임계값이 있으면 그 값을 사용합니다. 교차점 양쪽 후보 t₁·t₂에서는 과제 8쪽에 따라 <code>(FMR + FNMR)/2</code>가 더 작은 값을 선택합니다. EER*은 성공 점수만으로 분자·분모를 계산합니다. 이번 원시 로그에는 실패가 없어 두 값이 일치합니다. 기존 요약 CSV의 선형보간 EER과는 차이가 날 수 있습니다.</td></tr>
+      <tr><th scope="row">ZeroFMR / ZeroFNMR</th><td>ZeroFMR은 FMR=0인 임계값에서 가장 낮은 <strong>FNMR</strong>입니다. ZeroFNMR은 FNMR=0인 임계값에서 가장 낮은 <strong>FMR</strong>입니다. 표의 값은 각각 관측 오수락 0건 또는 관측 본인 거부 0건을 만들 때 발생한 반대쪽 오류입니다.</td></tr>
+      <tr><th scope="row">FMR100 / FMR1000</th><td>각각 FMR≤1%, FMR≤0.1%일 때 가장 낮은 <strong>FNMR</strong>입니다. 타인 2,880쌍에서 허용되는 오수락은 각각 최대 28건 및 2건입니다.</td></tr>
+      <tr><th scope="row">등록·매칭 시간</th><td>등록 시간은 <code>KISA_Enroll</code>의 평균입니다. 매칭 시간은 쌍의 비교용 특징 추출 시간(<code>KISA_Attempt</code>)과 비교 시간(<code>KISA_Compare</code>)의 합을 전체·본인·타인별로 평균한 값입니다. 추출 템플릿 캐시를 사용해 쌍별 재호출 비용은 한 번 측정한 비교 영상 값을 재사용해 산정했습니다.</td></tr>
+      <tr><th scope="row">템플릿 크기</th><td>성공한 <code>KISA_Enroll</code> 호출이 반환한 템플릿 바이트 수의 평균과 최댓값입니다. 디스크 컨테이너나 별도 파일 메타데이터는 제외한 값입니다.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="accuracy">
+  <h2>원본 영상 인식 성능</h2>
+  <div class="table-scroll" tabindex="0"><table><caption>원본 FVC에서 관측한 오류율 · 낮을수록 좋음</caption><thead><tr><th scope="col">DB</th><th scope="col">알고리즘</th><th scope="col">EER</th><th scope="col">EER*</th><th scope="col">선택 t</th><th scope="col">FMR(t)</th><th scope="col">FNMR(t)</th><th scope="col">ZeroFMR</th><th scope="col">ZeroFNMR</th><th scope="col">FMR100</th><th scope="col">FMR1000</th></tr></thead><tbody><tr><th scope="row">FVC2000</th><td>DeepPrint</td><td>2.50%</td><td>2.50%</td><td>0.870</td><td>2.50%</td><td>2.50%</td><td>34.64%</td><td>7.12%</td><td>11.79%</td><td>33.21%</td></tr><tr><th scope="row">FVC2000</th><td>히스토그램</td><td>34.86%</td><td>34.86%</td><td>0.680</td><td>34.72%</td><td>35.00%</td><td>99.64%</td><td>99.69%</td><td>91.79%</td><td>98.57%</td></tr><tr><th scope="row">FVC2002</th><td>DeepPrint</td><td>7.99%</td><td>7.99%</td><td>0.817</td><td>8.12%</td><td>7.86%</td><td>34.64%</td><td>34.10%</td><td>18.21%</td><td>30.71%</td></tr><tr><th scope="row">FVC2002</th><td>히스토그램</td><td>39.12%</td><td>39.12%</td><td>0.798</td><td>38.96%</td><td>39.29%</td><td>100.00%</td><td>96.15%</td><td>95.00%</td><td>99.29%</td></tr><tr><th scope="row">FVC2004</th><td>DeepPrint</td><td>12.27%</td><td>12.27%</td><td>0.895</td><td>12.40%</td><td>12.14%</td><td>95.71%</td><td>32.67%</td><td>64.29%</td><td>91.07%</td></tr><tr><th scope="row">FVC2004</th><td>히스토그램</td><td>49.73%</td><td>49.73%</td><td>0.910</td><td>48.75%</td><td>50.71%</td><td>100.00%</td><td>99.97%</td><td>98.57%</td><td>99.64%</td></tr></tbody></table></div>
+  <p><strong>선택 t</strong>는 과제식 EER에 사용한 임계값이며, 그 위치의 FMR·FNMR은 서로 다를 수 있습니다. EER은 이 두 값의 평균입니다. ZeroFMR·FMR100·FMR1000 열은 FNMR, ZeroFNMR 열은 FMR을 나타냅니다.</p>
+  <div class="table-scroll" tabindex="0"><table><caption>교차점과 운영 지표의 적용 임계값</caption><thead><tr><th scope="col">DB</th><th scope="col">알고리즘</th><th scope="col">EER t₁</th><th scope="col">EER t₂</th><th scope="col">ZeroFMR t</th><th scope="col">ZeroFNMR t</th><th scope="col">FMR100 t</th><th scope="col">FMR1000 t</th><th scope="col">FMR1000 오수락 수</th></tr></thead><tbody><tr><th scope="row">FVC2000</th><td>DeepPrint</td><td>0.870</td><td>0.870</td><td>0.958</td><td>0.831</td><td>0.921</td><td>0.957</td><td>1/2,880</td></tr><tr><th scope="row">FVC2000</th><td>히스토그램</td><td>0.678</td><td>0.680</td><td>0.981</td><td>0.304</td><td>0.938</td><td>0.970</td><td>2/2,880</td></tr><tr><th scope="row">FVC2002</th><td>DeepPrint</td><td>0.817</td><td>0.818</td><td>0.906</td><td>0.721</td><td>0.875</td><td>0.898</td><td>2/2,880</td></tr><tr><th scope="row">FVC2002</th><td>히스토그램</td><td>0.796</td><td>0.798</td><td>0.979</td><td>0.490</td><td>0.948</td><td>0.970</td><td>1/2,880</td></tr><tr><th scope="row">FVC2004</th><td>DeepPrint</td><td>0.895</td><td>0.896</td><td>0.986</td><td>0.831</td><td>0.969</td><td>0.983</td><td>2/2,880</td></tr><tr><th scope="row">FVC2004</th><td>히스토그램</td><td>0.908</td><td>0.910</td><td>0.999</td><td>0.698</td><td>0.989</td><td>0.995</td><td>2/2,880</td></tr></tbody></table></div>
+</section>
+
+<section id="failures">
+  <h2>처리 실패, 시간, 템플릿 크기</h2>
+  <div class="table-scroll" tabindex="0"><table><caption>등록·매칭 실패 · 원본 조건</caption><thead><tr><th scope="col">DB</th><th scope="col">알고리즘</th><th scope="col">FTE</th><th scope="col">REJ genuine</th><th scope="col">REJ impostor</th><th scope="col">비교 특징 추출 실패(장)</th><th scope="col">KISA_Compare 실패(쌍)</th></tr></thead><tbody><tr><th scope="row">FVC2000</th><td>DeepPrint</td><td>0/80 (0.00%)</td><td>0/280 (0.00%)</td><td>0/2880 (0.00%)</td><td>0</td><td>0</td></tr><tr><th scope="row">FVC2000</th><td>히스토그램</td><td>0/80 (0.00%)</td><td>0/280 (0.00%)</td><td>0/2880 (0.00%)</td><td>0</td><td>0</td></tr><tr><th scope="row">FVC2002</th><td>DeepPrint</td><td>0/80 (0.00%)</td><td>0/280 (0.00%)</td><td>0/2880 (0.00%)</td><td>0</td><td>0</td></tr><tr><th scope="row">FVC2002</th><td>히스토그램</td><td>0/80 (0.00%)</td><td>0/280 (0.00%)</td><td>0/2880 (0.00%)</td><td>0</td><td>0</td></tr><tr><th scope="row">FVC2004</th><td>DeepPrint</td><td>0/80 (0.00%)</td><td>0/280 (0.00%)</td><td>0/2880 (0.00%)</td><td>0</td><td>0</td></tr><tr><th scope="row">FVC2004</th><td>히스토그램</td><td>0/80 (0.00%)</td><td>0/280 (0.00%)</td><td>0/2880 (0.00%)</td><td>0</td><td>0</td></tr></tbody></table></div>
+  <p>원본 및 노이즈 조건의 비교 로그에 등록·비교용 추출·점수 계산 실패가 기록되지 않았습니다. 위 원본 표는 각 DB와 알고리즘별로 등록 이미지 80장과 본인·타인 비교 시도 건수를 분모로 표시합니다.</p>
+  <div class="table-scroll" tabindex="0"><table><caption>원본 재계측 · 시간 단위 ms, 등록 템플릿 크기 단위 B</caption><thead><tr><th scope="col">DB</th><th scope="col">알고리즘</th><th scope="col">등록 평균</th><th scope="col">비교 특징 추출 평균</th><th scope="col">매칭 전체</th><th scope="col">매칭 본인</th><th scope="col">매칭 타인</th><th scope="col">Compare 전체</th><th scope="col">Compare 본인</th><th scope="col">Compare 타인</th><th scope="col">평균 B</th><th scope="col">최대 B</th></tr></thead><tbody><tr><th scope="row">FVC2000</th><td>DeepPrint</td><td>155.389</td><td>155.068</td><td>155.817</td><td>155.831</td><td>155.816</td><td>0.001396</td><td>0.001399</td><td>0.001396</td><td>2056</td><td>2056</td></tr><tr><th scope="row">FVC2000</th><td>히스토그램</td><td>0.169</td><td>0.168</td><td>0.170</td><td>0.164</td><td>0.171</td><td>0.000057</td><td>0.000070</td><td>0.000055</td><td>16</td><td>16</td></tr><tr><th scope="row">FVC2002</th><td>DeepPrint</td><td>178.195</td><td>190.687</td><td>182.407</td><td>190.709</td><td>181.600</td><td>0.001500</td><td>0.001500</td><td>0.001500</td><td>2056</td><td>2056</td></tr><tr><th scope="row">FVC2002</th><td>히스토그램</td><td>0.089</td><td>0.087</td><td>0.088</td><td>0.088</td><td>0.088</td><td>0.000063</td><td>0.000165</td><td>0.000053</td><td>16</td><td>16</td></tr><tr><th scope="row">FVC2004</th><td>DeepPrint</td><td>165.686</td><td>156.414</td><td>158.067</td><td>157.406</td><td>158.131</td><td>0.001465</td><td>0.001492</td><td>0.001463</td><td>2056</td><td>2056</td></tr><tr><th scope="row">FVC2004</th><td>히스토그램</td><td>0.192</td><td>0.192</td><td>0.191</td><td>0.193</td><td>0.191</td><td>0.000057</td><td>0.000068</td><td>0.000056</td><td>16</td><td>16</td></tr></tbody></table></div>
+  <p>원본 조건에서 Windows CPU로 재계측했습니다. DLL을 먼저 한 번 예열하고 <code>std::chrono::steady_clock</code>으로 DLL 함수 호출만 측정했습니다. TIFF 디코딩과 초기 모델 로드는 측정 범위 밖입니다. Compare 열은 벡터 점수 계산만 보여주므로, 한 장을 새로 받았을 때의 비용은 비교 특징 추출을 포함한 매칭 열로 판단해야 합니다.</p>
+</section>
+
+<section id="noise">
+  <h2>가우시안 노이즈 내성</h2>
+  <div class="table-scroll" tabindex="0"><table><caption>가우시안 노이즈 강도별 과제식 EER</caption><thead><tr><th scope="col">DB</th><th scope="col">σ</th><th scope="col">DeepPrint 42</th><th scope="col">DeepPrint 43</th><th scope="col">히스토그램 42</th><th scope="col">DeepPrint 평균 − 원본</th></tr></thead><tbody><tr><th scope="row">FVC2000</th><td>0</td><td>2.50%</td><td>2.50%</td><td>34.86%</td><td>+0.00 %p</td></tr><tr><th scope="row">FVC2000</th><td>2</td><td>2.32%</td><td>2.30%</td><td>35.70%</td><td>-0.19 %p</td></tr><tr><th scope="row">FVC2000</th><td>5</td><td>2.32%</td><td>2.29%</td><td>35.44%</td><td>-0.20 %p</td></tr><tr><th scope="row">FVC2000</th><td>10</td><td>2.50%</td><td>2.32%</td><td>36.51%</td><td>-0.09 %p</td></tr><tr><th scope="row">FVC2002</th><td>0</td><td>7.99%</td><td>7.99%</td><td>39.12%</td><td>+0.00 %p</td></tr><tr><th scope="row">FVC2002</th><td>2</td><td>8.04%</td><td>8.56%</td><td>39.24%</td><td>+0.31 %p</td></tr><tr><th scope="row">FVC2002</th><td>5</td><td>9.06%</td><td>9.49%</td><td>39.18%</td><td>+1.28 %p</td></tr><tr><th scope="row">FVC2002</th><td>10</td><td>9.72%</td><td>9.47%</td><td>39.20%</td><td>+1.60 %p</td></tr><tr><th scope="row">FVC2004</th><td>0</td><td>12.27%</td><td>12.27%</td><td>49.73%</td><td>+0.00 %p</td></tr><tr><th scope="row">FVC2004</th><td>2</td><td>12.27%</td><td>12.27%</td><td>49.87%</td><td>+0.00 %p</td></tr><tr><th scope="row">FVC2004</th><td>5</td><td>12.23%</td><td>12.30%</td><td>49.84%</td><td>+0.00 %p</td></tr><tr><th scope="row">FVC2004</th><td>10</td><td>12.11%</td><td>12.30%</td><td>49.20%</td><td>-0.06 %p</td></tr></tbody></table></div>
+  <p>DeepPrint의 두 시드 결과는 촬영 노이즈를 가정한 반복 실험입니다. 평균 변화는 동일 DB의 원본 EER 대비 백분율포인트 차이입니다. 이번 평가는 공개 사전학습 가중치로 수행했습니다.</p>
+</section>
+
+<section id="figures">
+  <h2>원본 영상 그래프</h2>
+  <figure>
+    <div class="plot"><img src="assets/score-distributions.svg" alt="FVC 세 DB의 원본 DeepPrint 점수 분포. 본인 점수와 타인 점수를 구분해 표시"></div>
+    <figcaption>점수 분포. 클래스별 표본수 차이를 보정해 각 클래스 내 비율을 표시했습니다. <a href="assets/score-distributions.svg">별도 SVG</a></figcaption>
+  </figure>
+  <figure>
+    <div class="plot"><img src="assets/det-curves.svg" alt="FVC 세 DB의 DeepPrint와 히스토그램 DET 곡선. FMR 0.1%와 1% 위치 표시"></div>
+    <figcaption>DET 곡선. 로그 축에 표시할 수 있는 양의 FMR·FNMR을 그렸습니다. 관측 오류가 0인 운영점은 표에서 확인할 수 있습니다. <a href="assets/det-curves.svg">별도 SVG</a></figcaption>
+  </figure>
+  <figure>
+    <div class="plot"><img src="assets/threshold-curves.svg" alt="DeepPrint의 임계값별 FMR 및 FNMR과 EER 선택 임계값"></div>
+    <figcaption>DeepPrint의 FMR(t)·FNMR(t). 교차 구간을 보기 위해 표시 범위를 0.45~1.00으로 잡았습니다. <a href="assets/threshold-curves.svg">별도 SVG</a></figcaption>
+  </figure>
+</section>
+
+<section id="limits">
+  <h2>종합 해석과 한계</h2>
+  <ul>
+    <li><strong>인식과 운영 임계값.</strong> DeepPrint는 원본 세 DB에서 균형 오류율을 낮췄습니다. 가장 큰 제약은 FVC2004입니다. EER은 12.27%이지만, 오수락을 0.1% 이하로 제한하면 본인 거부율이 91.07%입니다. 이 조건에서 FVC2000과 FVC2002의 본인 거부율은 각각 33.21%, 30.71%입니다. ZeroFMR은 이 표본에서 관측한 오수락 0건을 뜻합니다.</li>
+    <li><strong>노이즈 영향.</strong> σ=10에서 FVC2002의 DeepPrint EER 상승이 두 시드 모두에서 나타났습니다. FVC2000과 FVC2004의 변화는 상대적으로 작았습니다. FVC2004의 작은 하락은 이 표본과 노이즈 시드의 변동으로 해석합니다.</li>
+    <li><strong>실행 비용.</strong> DeepPrint의 매칭 평균은 DB별 약 156~182 ms이며 대부분이 특징 추출 시간입니다. 이미 만든 템플릿끼리 점수를 계산하는 데는 평균 약 1.4~1.5 μs가 걸렸습니다. 등록 템플릿은 DeepPrint 2,056바이트, 히스토그램 16바이트였습니다.</li>
+    <li><strong>표본 범위.</strong> DB당 10개 손가락을 반복 비교하므로 쌍은 서로 통계적으로 독립적이지 않습니다. 타인 한 건이 약 0.0347%p를 차지합니다. 관측 오류율과 두 노이즈 시드는 이 사전학습 모델과 현재 FVC 표본에 대한 결과입니다.</li>
+  </ul>
+</section>
+
+<section id="sources" class="source">
+  <h2>근거 자료</h2>
+  <ul>
+    <li><a href="../reference/01.%20%ED%94%84%EB%A1%9C%EC%A0%9D%ED%8A%B8%28202602SME3007%29_ver1.pdf#page=5">과제 PDF 5쪽</a>의 조합·HTML 및 벡터 그래프 요구, <a href="../reference/01.%20%ED%94%84%EB%A1%9C%EC%A0%9D%ED%8A%B8%28202602SME3007%29_ver1.pdf#page=7">7~9쪽</a>의 지표 정의, <a href="../reference/01.%20%ED%94%84%EB%A1%9C%EC%A0%9D%ED%8A%B8%28202602SME3007%29_ver1.pdf#page=10">10쪽</a>의 그래프 예시</li>
+    <li>DeepPrint <a href="../build/evaluation/deepprint-seed42/pairs.csv">시드 42 원시 점수</a> · <a href="../build/evaluation/deepprint-seed43/pairs.csv">시드 43 원시 점수</a> · <a href="../build/evaluation/histogram-seed42/pairs.csv">히스토그램 시드 42 원시 점수</a></li>
+    <li>원본 재계측 <a href="../build/report-reference/deepprint-clean/summary.csv">DeepPrint 시간·크기 CSV</a> · <a href="../build/report-reference/histogram-clean/summary.csv">히스토그램 시간·크기 CSV</a></li>
+  </ul>
+</section>
+</main>
+</body>
+</html>

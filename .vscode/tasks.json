@@ -101,6 +101,20 @@
         "kind": "build",
         "isDefault": true
       }
+    },
+    {
+      "label": "Build DeepPrint DLL and noise tools",
+      "type": "process",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-Command",
+        "$cmake = Get-Command cmake.exe -ErrorAction SilentlyContinue; $cmakePath = if ($cmake) { $cmake.Source } else { 'build/dependencies/python/Lib/site-packages/cmake/data/bin/cmake.exe' }; & $cmakePath --build build/deepprint --config Release --parallel; exit $LASTEXITCODE"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": ["$gcc"]
     }
   ]
 }

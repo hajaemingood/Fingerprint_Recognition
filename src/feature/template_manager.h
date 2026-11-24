@@ -4,9 +4,9 @@
 
 namespace fingerprint {
 
-// The draft format is a fixed-length histogram. The caller provides a
-// writable KISA template buffer and passes only generated templates to decode.
+// The caller provides a KISA template buffer and passes templates produced
+// by the same backend. KISA_Compare has no separate buffer length argument.
 int encodeTemplate(const Features& features, unsigned char* output);
-Features decodeTemplate(const unsigned char* input);
+bool decodeTemplate(const unsigned char* input, Features& features);
 
 } // namespace fingerprint
