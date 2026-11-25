@@ -101,6 +101,7 @@ struct Statistics
     };
     std::vector<Point> curve;
 };
+std::wstring recognitionBackendLabel();
 Plan buildPlan(const Settings &settings);
 void savePlan(const Plan &plan, const fs::path &file);
 Plan loadPlan(const fs::path &file, const Settings &fallback);

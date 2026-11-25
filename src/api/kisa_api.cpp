@@ -7,6 +7,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <exception>
 
 namespace {
 
@@ -31,13 +32,18 @@ int extract(int iType, const unsigned char* image, unsigned char* output,
         return report(1, "Missing image or template output", errorCode, errorMessage);
     }
 
-    fingerprint::Features descriptor{};
-    if (!fingerprint::extractFeatures(iType, image, descriptor)) {
-        return report(2, "Unsupported iType", errorCode, errorMessage);
+    try {
+        fingerprint::Features descriptor{};
+        if (!fingerprint::extractFeatures(iType, image, descriptor)) {
+            return report(2, "Unsupported iType", errorCode, errorMessage);
+        }
+        *outputSize = fingerprint::encodeTemplate(descriptor, output);
+        return report(0, "", errorCode, errorMessage);
+    } catch (const std::exception& error) {
+        return report(3, error.what(), errorCode, errorMessage);
+    } catch (...) {
+        return report(3, "Feature extraction failed", errorCode, errorMessage);
     }
-
-    *outputSize = fingerprint::encodeTemplate(descriptor, output);
-    return report(0, "", errorCode, errorMessage);
 }
 
 } // namespace
@@ -64,8 +70,11 @@ int __cdecl KISA_Compare(unsigned char* enroll, unsigned char* attempt,
         return report(1, "Missing template or score output", errorCode, errorMessage);
     }
 
-    const auto enrolled = fingerprint::decodeTemplate(enroll);
-    const auto probe = fingerprint::decodeTemplate(attempt);
+    fingerprint::Features enrolled{};
+    fingerprint::Features probe{};
+    if (!fingerprint::decodeTemplate(enroll, enrolled) || !fingerprint::decodeTemplate(attempt, probe)) {
+        return report(4, "Invalid or incompatible fingerprint template", errorCode, errorMessage);
+    }
     const double similarity = fingerprint::compareFeatures(enrolled, probe);
     *score = std::round(similarity * 1000.0) / 1000.0;
     return report(0, "", errorCode, errorMessage);

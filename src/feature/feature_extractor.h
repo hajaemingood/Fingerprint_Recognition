@@ -4,7 +4,7 @@
 
 namespace fingerprint {
 
-// Returns false for an unsupported iType. The caller validates image.
+// Returns false for an unsupported iType. Model and inference failures throw.
 bool extractFeatures(int iType, const unsigned char* image, Features& features);
 
 } // namespace fingerprint

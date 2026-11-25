@@ -5,8 +5,7 @@
 
 namespace fingerprint {
 
-// Temporary brightness descriptor shared by extraction and comparison.
-inline constexpr std::size_t kFeatureCount = 16;
-using Features = std::array<unsigned char, kFeatureCount>;
+inline constexpr std::size_t kFeatureCount = 512;
+using Features = std::array<float, kFeatureCount>;
 
 } // namespace fingerprint

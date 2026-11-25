@@ -895,7 +895,7 @@ void drawDashboard(AppState &s, HDC dc)
     write(s, dc, descriptions[s.page], 90, 62, 820, 25, Body, kMuted);
     rounded(dc, box(s, 1001, 27, 255, 48), RGB(235, 247, 241), RGB(235, 247, 241), 12);
     dot(s, dc, 1018, 47, 8, kGenuine);
-    write(s, dc, L"현재 DLL · 밝기 히스토그램", 1034, 30, 211, 42, Small, kGenuine);
+    write(s, dc, recognitionBackendLabel(), 1034, 30, 211, 42, Small, kGenuine);
     if (s.page == 0)
         drawSetupPage(s, dc);
     else if (s.page == 1)
@@ -1259,10 +1259,10 @@ void createControls(AppState &s)
     s.white = CreateSolidBrush(kCard);
     makeFonts(s);
     s.root = findRoot();
-    s.databaseChoices = {s.root / L"data/fvc/FVC2000_DB3_B", s.root / L"data/fvc/FVC2002_DB3_B",
+    s.databaseChoices = {s.root / L"data/fvc/FVC2000_DB3_B", s.root / L"data/fvc/FVC2002_DB2_B",
                          s.root / L"data/fvc/FVC2004_DB1_B"};
     s.database = s.databaseChoices[1];
-    addCombo(s, Db, {L"FVC 2000 · DB3_B", L"FVC 2002 · DB3_B", L"FVC 2004 · DB1_B"}, 1);
+    addCombo(s, Db, {L"FVC 2000 · DB3_B", L"FVC 2002 · DB2_B", L"FVC 2004 · DB1_B"}, 1);
     addButton(s, BrowseDb, L"다른 DB 폴더 선택");
     addCombo(s, Registration,
              {L"첫 번째 촬영본", L"무작위 1장", L"촬영번호 지정", L"모든 촬영본 각각"});

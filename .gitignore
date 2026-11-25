@@ -2,3 +2,4 @@
 /dist/
 /.vs/
 /CMakeUserPresets.json
+/archive/histogram/builds/

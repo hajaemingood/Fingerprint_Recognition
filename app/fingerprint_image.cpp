@@ -324,8 +324,20 @@ int csvInteger(const std::string &text, int minimum, int maximum)
         throw std::runtime_error("CSV 설정의 숫자 범위를 확인하세요.");
     return static_cast<int>(value);
 }
-ImageFile csvImage(const fs::path &path)
+fs::path currentDatabasePath(fs::path path)
 {
+    if (!fs::exists(path) && path.filename() == L"FVC2002_DB3_B" &&
+        path.parent_path().filename() == L"fvc")
+    {
+        auto renamed = path.parent_path() / L"FVC2002_DB2_B";
+        if (fs::is_directory(renamed))
+            return renamed;
+    }
+    return path;
+}
+ImageFile csvImage(fs::path path)
+{
+    path = currentDatabasePath(path.parent_path()) / path.filename();
     if (!fs::is_regular_file(path))
         throw std::runtime_error("CSV에 지정한 지문 파일이 없습니다.");
     auto extension = path.extension().wstring();
@@ -435,8 +447,8 @@ Plan loadPlan(const fs::path &file, const Settings &fallback)
                 if (row.size() != 2 || row[1].empty())
                     throw std::runtime_error("CSV의 DB 경로가 비어 있습니다.");
                 auto path = fs::u8path(row[1]);
-                plan.settings.database =
-                    fs::weakly_canonical(path.is_absolute() ? path : file.parent_path() / path);
+                plan.settings.database = fs::weakly_canonical(
+                    currentDatabasePath(path.is_absolute() ? path : file.parent_path() / path));
                 if (!fs::is_directory(plan.settings.database))
                     throw std::runtime_error("CSV에 저장된 DB 폴더를 찾을 수 없습니다.");
                 databaseMetadata = true;
@@ -491,6 +503,68 @@ Plan loadPlan(const fs::path &file, const Settings &fallback)
     return plan; // Do not shuffle or regenerate an imported list.
 }
 
+namespace
+{
+fs::path backendDirectory()
+{
+    std::wstring path(32768, L'\0');
+    DWORD length = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
+    if (!length || length >= path.size())
+        throw std::runtime_error("실행 파일 위치를 확인할 수 없습니다.");
+    path.resize(length);
+    return fs::path(path).parent_path();
+}
+#ifdef FINGERPRINT_DYNAMIC_BACKEND
+struct Backend
+{
+    HMODULE library = nullptr;
+    decltype(&KISA_Enroll) enroll = nullptr;
+    decltype(&KISA_Attempt) attempt = nullptr;
+    decltype(&KISA_Compare) compare = nullptr;
+    Backend()
+    {
+        auto dll = backendDirectory() / L"IndustryAlgorithm.dll";
+        library = LoadLibraryExW(dll.c_str(), nullptr,
+                                 LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
+        if (!library)
+            throw std::runtime_error(
+                "DeepPrint DLL을 읽을 수 없습니다. 실행 파일 옆에 IndustryAlgorithm.dll, "
+                "deepprint_texminu_512.onnx, onnxruntime.dll을 준비하세요.");
+        enroll = reinterpret_cast<decltype(enroll)>(GetProcAddress(library, "KISA_Enroll"));
+        attempt = reinterpret_cast<decltype(attempt)>(GetProcAddress(library, "KISA_Attempt"));
+        compare = reinterpret_cast<decltype(compare)>(GetProcAddress(library, "KISA_Compare"));
+        if (!enroll || !attempt || !compare)
+        {
+            FreeLibrary(library);
+            library = nullptr;
+            throw std::runtime_error("선택한 DLL에 KISA 등록·추출·비교 함수가 없습니다.");
+        }
+    }
+    ~Backend()
+    {
+        if (library)
+            FreeLibrary(library);
+    }
+    Backend(const Backend &) = delete;
+    Backend &operator=(const Backend &) = delete;
+};
+bool deepprintTemplate(const std::vector<unsigned char> &data, int bytes)
+{
+    constexpr unsigned char header[]{'D', 'P', 'T', 'M', 1, 0, 0, 2};
+    return bytes == 2056 && std::equal(std::begin(header), std::end(header), data.begin());
+}
+#endif
+} // namespace
+std::wstring recognitionBackendLabel()
+{
+    auto directory = backendDirectory();
+    for (const auto *file :
+         {L"IndustryAlgorithm.dll", L"deepprint_texminu_512.onnx", L"onnxruntime.dll"})
+        if (!fs::is_regular_file(directory / file))
+            return L"DeepPrint · 실행 파일 준비 필요";
+    return L"DeepPrint · 질감 22% · 특징점 78%";
+}
+
 EvaluationTiming evaluate(const Plan &plan, std::atomic<bool> &cancel,
                           const std::function<void(size_t, const Result &)> &onResult,
                           const std::function<void(size_t, int)> &onStarted)
@@ -504,6 +578,16 @@ EvaluationTiming evaluate(const Plan &plan, std::atomic<bool> &cancel,
         throw std::runtime_error("동시 실행 수는 1~16 사이여야 합니다.");
     if (cancel || plan.pairs.empty())
         return timing;
+#ifdef FINGERPRINT_DYNAMIC_BACKEND
+    Backend backend;
+    auto enrollCall = backend.enroll;
+    auto attemptCall = backend.attempt;
+    auto compareCall = backend.compare;
+#else
+    auto enrollCall = &KISA_Enroll;
+    auto attemptCall = &KISA_Attempt;
+    auto compareCall = &KISA_Compare;
+#endif
     HRESULT initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     if (FAILED(initialized))
         throw std::runtime_error("이미지 읽기 구성 요소를 초기화하지 못했습니다.");
@@ -558,12 +642,17 @@ EvaluationTiming evaluate(const Plan &plan, std::atomic<bool> &cancel,
         registration.data.resize(capacity);
         int bytes = 0, error = 0;
         char message[256]{};
-        int success = KISA_Enroll(input.image.type, pixels.data(), registration.data.data(), &bytes,
-                                  &error, message);
+        int success = enrollCall(input.image.type, pixels.data(), registration.data.data(), &bytes,
+                                 &error, message);
         if (success != 1 || error != 0)
             registration.error = apiError(L"등록", error, message);
         else if (bytes <= 0 || bytes > capacity)
             registration.error = L"DLL의 템플릿 크기가 올바르지 않습니다.";
+#ifdef FINGERPRINT_DYNAMIC_BACKEND
+        else if (!deepprintTemplate(registration.data, bytes))
+            registration.error = L"DeepPrint 형식의 템플릿이 아닙니다. 이전 히스토그램 DLL 대신 "
+                                 L"최신 DeepPrint DLL을 사용하세요.";
+#endif
         else
             registration.data.resize(bytes);
         if (!registration.error.empty())
@@ -599,8 +688,12 @@ EvaluationTiming evaluate(const Plan &plan, std::atomic<bool> &cancel,
         int bytes = 0, error = 0;
         char message[256]{};
         int success =
-            KISA_Attempt(input.image.type, pixels.data(), attempt.data(), &bytes, &error, message);
-        if (success != 1 || error != 0 || bytes <= 0 || bytes > capacity)
+            attemptCall(input.image.type, pixels.data(), attempt.data(), &bytes, &error, message);
+        if (success != 1 || error != 0 || bytes <= 0 || bytes > capacity
+#ifdef FINGERPRINT_DYNAMIC_BACKEND
+            || !deepprintTemplate(attempt, bytes)
+#endif
+        )
         {
             result.status = Status::AttemptError;
             result.detail = apiError(L"비교 특징 추출", error, message);
@@ -610,7 +703,7 @@ EvaluationTiming evaluate(const Plan &plan, std::atomic<bool> &cancel,
             result.score = NAN;
             error = 0;
             std::fill(std::begin(message), std::end(message), '\0');
-            success = KISA_Compare(enrolled.data(), attempt.data(), &result.score, &error, message);
+            success = compareCall(enrolled.data(), attempt.data(), &result.score, &error, message);
             if (success != 1 || error != 0)
             {
                 result.status = Status::CompareError;

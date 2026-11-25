@@ -2,14 +2,14 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Fingerprint pipeline (GDB)",
+      "name": "Fingerprint evaluation (GDB)",
       "type": "cppdbg",
       "request": "launch",
-      "program": "${workspaceFolder}/build/Release/test_pipeline.exe",
+      "program": "${workspaceFolder}/build/evaluator/fingerprint_compare.exe",
       "cwd": "${workspaceFolder}",
       "MIMode": "gdb",
       "miDebuggerPath": "C:\\msys64\\ucrt64\\bin\\gdb.exe",
-      "preLaunchTask": "Build fingerprint pipeline"
+      "preLaunchTask": "Build DeepPrint and evaluation app"
     },
     {
       "name": "C/C++ Runner: Debug Session",
