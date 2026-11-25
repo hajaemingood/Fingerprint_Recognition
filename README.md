@@ -1,12 +1,136 @@
 # Fingerprint Recognition
 
+## 로컬 UI 통합 브랜치
+
+이 브랜치는 로컬 `main`의 DeepPrint DLL 및 FVC2004 영역 자르기 설정을 유지하면서,
+`codex/deepprint-ui-merge`의 다섯 페이지 UI(설정 / 비교 결과 / 인식 성능 / 처리 성능 / 평가 요약)를 사용합니다.
+
+### 새 PC에서 처음부터 실행 (Visual Studio 2022·2026 공통)
+
+`build/`의 DLL·모델·런타임은 Git에 포함되지 않으므로, 클론 직후에는 아래 절차로 한 번 준비합니다.
+`ui-*`, `deepprint-release` 프리셋은 Visual Studio 버전 이름에 묶이지 않는 Ninja + MSVC 구성입니다.
+기존 `vs2022-*` 프리셋은 VS 2022 전용으로 그대로 유지합니다.
+
+**필요한 것:** Visual Studio 2022 이상의 **C++를 사용한 데스크톱 개발** 워크로드(Windows용 C++ CMake 도구 포함), Git, Python 3.12
+
+1. **모델과 ONNX Runtime 준비** — 일반 PowerShell에서 저장소 루트로 이동해 [DeepPrint 최초 빌드 준비](#deepprint-최초-빌드-준비)의 명령을 그대로 실행합니다.
+   완료되면 `build/models/deepprint_texminu_512.onnx`, `build/models/parity/`, `build/dependencies/onnxruntime/`가 생깁니다.
+2. **DLL과 UI 빌드** — Visual Studio에서 **로컬 폴더 열기**로 저장소 루트를 열고, 상단 구성에서 `deepprint-release`를 선택한 뒤
+   **빌드 → 모두 빌드**를 실행합니다. 명령줄에서는 아래처럼 x64 개발자 셸에서 실행합니다.
+
+   ```powershell
+   # Developer PowerShell for VS는 기본이 x86이므로 x64로 전환합니다.
+   & "$env:VSINSTALLDIR\Common7\Tools\Launch-VsDevShell.ps1" -Arch amd64 -HostArch amd64
+   cd <저장소 경로>
+   cmake --preset deepprint-release
+   cmake --build --preset deepprint-release
+   ctest --preset deepprint-release   # 100% tests passed 확인
+   ```
+
+3. **실행** — `build/deepprint-release/`에 `fingerprint_compare.exe`, `IndustryAlgorithm.dll`,
+   `deepprint_texminu_512.onnx`, `onnxruntime.dll`이 함께 생성됩니다. 앱을 실행하고 **알고리즘 DLL 선택**에서
+   같은 폴더의 `IndustryAlgorithm.dll`을 선택합니다.
+
+UI만 수정할 때는 `ui-release`(또는 `ui-debug`)를 선택합니다. 출력은 `build/ui-release/fingerprint_compare.exe`이며,
+이후 받은 DLL만 교체하는 경우 `onnxruntime.dll`과 `deepprint_texminu_512.onnx`를 실행 파일 폴더에 한 번 두면 재사용됩니다.
+MSYS2 MinGW g++ 환경에서는 `ui-release-mingw`를 사용하며 `g++`, `mingw32-make`가 PATH에 있어야 합니다.
+
+| 프리셋 | 컴파일러 | 빌드 대상 | 출력 폴더 |
+| --- | --- | --- | --- |
+| `ui-release` / `ui-debug` | MSVC (VS 2022·2026) | UI | `build/ui-release`, `build/ui-debug` |
+| `ui-release-mingw` | MSYS2 g++ | UI | `build/ui-release-mingw` |
+| `deepprint-release` | MSVC (VS 2022·2026) | DeepPrint DLL + UI + 테스트 | `build/deepprint-release` |
+
+**문제 해결**
+
+- `cmake`를 찾을 수 없음: 일반 PowerShell이 아니라 Developer PowerShell(또는 VS 터미널)에서 실행합니다.
+- `CMakeLists.txt:37`의 "DeepPrint requires a Windows x64 build": x86 셸에서 구성된 경우입니다. 위의 x64 전환 후
+  `cmake --preset deepprint-release --fresh`를 실행하거나, VS에서 **프로젝트 → CMake 캐시 삭제 및 다시 구성**을 실행합니다.
+- 빌드 직후 VS 테스트 메뉴에서 "Process not started"가 나오면 잠시 후 `ctest --preset deepprint-release`로 다시 확인합니다.
+
+### 기존 VS 2022 전용 프리셋
+
+VS 2022에서는 기존 `vs2022-*` 프리셋도 그대로 사용할 수 있습니다. UI만 개발하고 받은 DLL을 연결할 때는 다음 설정을 사용합니다.
+
+```powershell
+cmake --preset vs2022-ui-only
+cmake --build --preset vs2022-ui-release
+```
+
+Visual Studio에서 F5로 실행할 때는 저장소 루트 폴더를 열고 다음을 설정합니다.
+
+1. 상단 구성을 `vs2022-ui-release`로 선택하고 CMake 생성 완료를 기다립니다.
+2. 상단 **시작 항목 선택**에서 `fingerprint_compare.exe (Release\fingerprint_compare.exe)`를 선택합니다. `(설치)` 항목은 선택하지 않습니다.
+3. 시작 항목이 보이지 않으면 솔루션 탐색기의 **솔루션과 사용 가능한 보기 간 전환 → CMake 대상 뷰**로 전환합니다.
+4. **F5**를 누르면 Visual Studio가 UI를 빌드하고 디버깅을 시작합니다.
+
+시작 항목 선택은 PC별 Visual Studio 설정입니다. 새로 클론한 팀원도 처음 한 번 설정해야 합니다.
+
+출력은 `build/vs2022-ui/Release/fingerprint_compare.exe`입니다. 앱 화면은 DLL이 없어도 열립니다.
+평가 시 알고리즘 팀에서 받은 x64 DLL과 필요한 모델·런타임을 준비하고 앱에서 DLL과 DB를 선택합니다.
+DeepPrint의 공통 모델·런타임은 선택 DLL 폴더 또는 실행 파일 폴더에 두면 됩니다.
+저장소의 `build/`, `dist/`, `.vs/`를 다른 PC의 빌드 캐시로 재사용하지 않습니다.
+배포 폴더를 옮겨 실행하는 것과 저장소를 새로 클론해 컴파일하는 것은 별도 절차입니다.
+
+Visual Studio에서 `vs2022-debug`를 선택하고 시작 항목을 `fingerprint_compare.exe`로 지정합니다.
+기본 `vs2022-x64` 구성은 **DeepPrint DLL과 UI를 함께 빌드**합니다.
+명령줄에서는 `cmake --preset vs2022-x64` 후 `cmake --build --preset vs2022-debug`를 실행합니다.
+출력 위치는 `build/vs2022-deepprint/Debug/`입니다.
+
+실행 폴더에는 `fingerprint_compare.exe`, `IndustryAlgorithm.dll`,
+`deepprint_texminu_512.onnx`, `onnxruntime.dll`이 함께 있어야 합니다.
+모델과 런타임은 `build/models/`, `build/dependencies/onnxruntime/`에 준비하고
+빌드 시 실행 폴더로 자동 복사합니다. 새 PC에서 저장소를 내려받을 경우 이 파일들은
+Git에 포함되어 있지 않으므로 아래 최초 빌드 준비 절차를 먼저 수행해야 합니다.
+모델 기준 벡터는 `build/models/parity/`에 저장하고 CTest로 실제 C++ 추론과 대조합니다.
+
+### 앱 사용
+
+앱은 **01 실험 설정 → 02 비교 실행·결과 → 03 인식 성능 → 04 처리 성능 → 05 평가 요약** 다섯 페이지로 구성됩니다.
+
+1. **01 실험 설정**에서 **DB 폴더 선택…**과 **알고리즘 DLL 선택…**으로 DB와 DLL을 지정합니다.
+2. 등록 이미지, 본인 비교(같은 손가락), 타인 비교(다른 손가락) 규칙과 동시 비교 수(1~16)를 정하고 **새 비교 목록 만들기**를 누릅니다.
+   저장해 둔 비교 목록 CSV는 **불러오기**로 그대로 사용할 수 있습니다.
+3. **02 비교 실행·결과**에서 비교를 실행하고, 진행 중에는 **비교 중지**로 멈출 수 있습니다.
+4. **03~05** 페이지에서 지표와 그래프를 확인하고 **보고서 저장**으로 HTML 보고서를 저장합니다.
+
+앱에서 **DB 폴더**와 **알고리즘 DLL**을 직접 선택합니다. DLL은 x64이며 공통 KISA
+`KISA_Enroll`, `KISA_Attempt`, `KISA_Compare` C ABI와 `__cdecl` 호출 규약을 따라야 합니다.
+템플릿은 최대 1,000,000바이트의 불투명 데이터로 취급하며 정합 점수는 높을수록 유사한 0~1 값입니다.
+DLL의 종속 라이브러리와 모델은 선택한 DLL 폴더를 우선 사용합니다. DeepPrint의 경우
+`onnxruntime.dll`과 `deepprint_texminu_512.onnx`가 필요하며, 선택한 DLL 폴더에 없으면
+실행 파일 폴더의 공통 파일을 자동 재사용합니다. 앱은 임시 폴더에 DLL 버전별 실행용
+복사본을 준비하므로 다운로드 폴더 원본은 바꾸지 않습니다. 새로운 모델이나 런타임을
+요구하는 버전은 해당 파일도 함께 준비해야 합니다. 다른 KISA DLL은 자체 종속 파일 구성을 유지합니다.
+기존 배포 폴더에서 DLL만 직접 교체할 때는 앱을 종료한 뒤 교체하고 다시 실행합니다.
+처음에는 동시 비교 수 1로 실행하고 DLL의 병렬 호출 지원을 확인한 뒤 늘립니다.
+DB는 한 폴더의 `손가락번호_촬영번호.tif` 또는 `.tiff` 파일을 사용합니다.
+
+앱은 매 비교마다 테스트 이미지의 특징을 추출합니다. 비교 실행 시 인식 성능 화면으로 이동하고,
+하단 이전·다음 버튼으로 인식 성능 → 처리 성능 → 평가 요약 → 보고서 저장을 이어갈 수 있습니다.
+비교 쌍 CSV는 실제 순서를 저장하며, 다른 PC에서 원래 DB 경로가 없으면 같은 이름의 DB를
+먼저 선택한 뒤 불러올 수 있습니다. CSV를 불러와도 선택한 DLL은 자동으로 바뀌지 않습니다.
+
+평가 요약은 **핵심 결과 / 상세 지표 / 그래프**로 나눕니다.
+평가 후 **보고서 저장**에서 UTF-8 HTML 파일을 저장하면 지표, 실험 설정, SVG 그래프,
+비교별 결과를 외부 리소스 없이 확인할 수 있습니다. 보고서의 인쇄 버튼으로 PDF 저장도 가능합니다.
+중단한 실행은 부분 결과로 표시하며, 처리 실패와 미완료 행을 보고서에 보존합니다.
+EER 계열 지표는 선택 목록 기준이며 공식 FVC 순위와 직접 비교할 수 없습니다.
+RAM은 앱·모델·캐시 전체의 Working Set을 관측한 값입니다.
+
+로컬 배포 묶음은 `dist/FingerprintDemo/`에 준비합니다. `build/`, `dist/`, 모델과 런타임 DLL은
+Git에 포함되지 않습니다. 다른 PC에는 실행 파일뿐 아니라 배포 폴더 전체를 옮깁니다.
+
+---
+
+
 ## 프로젝트 목표
 
 고급 객체지향 프로그래밍(SME3007) 과제입니다. Windows용 C++17 DeepPrint DLL로 지문 정합 점수를 계산하고, 평가 앱에서 선택한 KISA DLL을 FVC 데이터로 시험해 CSV 로그와 HTML 보고서를 생성합니다.
 
 | 사용 목적 | 빌드 또는 실행 경로 |
 | --- | --- |
-| Windows 성능 평가 | `build/evaluator/fingerprint_compare.exe`에서 DLL, FVC DB, 시험 규칙과 보고서 항목을 선택 |
+| Windows 성능 평가 | `fingerprint_compare.exe`에서 DLL, FVC DB, 비교 규칙을 선택하고 HTML 보고서 저장 |
 | DeepPrint DLL 빌드 | `FINGERPRINT_DEEPPRINT=ON`으로 `IndustryAlgorithm.dll`과 런타임 파일 생성 |
 | 노이즈·회전·밝기 강건성 평가 | `augment_fvc.exe`로 증강 영상을 만들고 `evaluate_noise.exe`로 같은 쌍을 일괄 비교 |
 
@@ -25,7 +149,8 @@ DLL은 좌상단부터 연속으로 저장된 8비트 회색조 픽셀 배열을
 ```text
 Advanced_OOP/
 ├── README.md
-├── CMakeLists.txt                    # DLL, 평가 앱·워커, 일괄 평가 도구, 테스트
+├── CMakeLists.txt                    # DLL, 평가 앱, 일괄 평가 도구, 테스트
+├── CMakePresets.json                 # Visual Studio·MinGW 빌드 프리셋
 ├── .gitignore                        # 로컬 빌드 및 실험 산출물 제외
 ├── .vscode/
 │   ├── tasks.json                    # VS Code 빌드 작업
@@ -45,13 +170,8 @@ Advanced_OOP/
 │   └── matching/fingerprint_matcher.{h,cpp}
 ├── app/
 │   ├── main.cpp                      # Windows GUI 진입점
-│   ├── evaluation_window.{h,cpp}     # 평가 설정, 실행, 중단, 보고서 열기
-│   └── evaluation/
-│       ├── plan.{h,cpp}              # 시험 규칙, 부분 평가 CSV, 무작위 조합
-│       ├── run.{h,cpp}               # 병렬 작업 배정과 진행 상태
-│       ├── worker.{h,cpp}            # 워커 시작, 통신, 타임아웃과 강제 종료
-│       ├── worker_main.cpp           # 선택한 DLL의 KISA 함수 호출
-│       └── report.{h,cpp}            # 시험 계획, 쌍별 로그, HTML 보고서
+│   ├── comparison_window.{h,cpp}     # 다섯 페이지 UI, 비교 실행·중지, 보고서 저장
+│   └── fingerprint_image.{h,cpp}     # TIFF 읽기, DLL 로드, 비교 목록·지표 계산
 ├── tools/
 │   ├── deepprint/export_model.py     # 오프라인 모델 변환과 기준 벡터 생성
 │   ├── fvc/
@@ -67,8 +187,8 @@ Advanced_OOP/
 │       ├── noise_evaluation.cpp      # evaluate_noise 실행 진입점
 │       └── weight_tuning.cpp         # 저장 템플릿 기반 정합 가중치 실험
 ├── tests/
-│   ├── evaluation_fixture.cpp        # 평가기 오류 감지용 테스트 DLL
-│   ├── test_evaluation.cpp           # 조합·병렬·중단·보고서 검증
+│   ├── evaluation_fixture.cpp        # upstream 워커 UI용 (이 브랜치에서는 빌드하지 않음)
+│   ├── test_evaluation.cpp           # upstream 워커 UI용 (이 브랜치에서는 빌드하지 않음)
 │   ├── test_deepprint.cpp            # DeepPrint 기준 벡터 비교
 │   └── test_noise.cpp                # 증강 변환과 지표 계산 검증
 ├── data/fvc/                         # 원본 FVC TIFF 240장
@@ -99,7 +219,7 @@ Advanced_OOP/
 | `tools/` | DeepPrint 모델 변환, TIFF 노이즈 생성, KISA DLL 일괄 평가 |
 | `reports/` | 최신 평가 HTML과 이전 실험의 SVG 그래프 |
 
-평가 앱은 전용 워커 프로세스에서 선택한 DLL을 동적으로 불러옵니다. 명령줄 평가기는 실행 인자로 받은 DLL을 사용합니다. 두 평가기는 공개 KISA 함수로 템플릿을 만들고 비교합니다. 평가 팀은 `FINGERPRINT_DEEPPRINT=OFF`로 앱과 워커를 독립적으로 빌드할 수 있습니다.
+평가 앱은 선택한 x64 DLL을 임시 폴더에 복사한 뒤 앱 프로세스에서 동적으로 불러옵니다. 명령줄 평가기는 실행 인자로 받은 DLL을 사용합니다. 두 평가기는 공개 KISA 함수로 템플릿을 만들고 비교합니다. 평가 팀은 `FINGERPRINT_DEEPPRINT=OFF`(`ui-release` 프리셋)로 앱을 독립적으로 빌드할 수 있습니다.
 
 ## 구형 빌드와 평가 기록
 
@@ -127,7 +247,7 @@ DLL의 `iType` 매핑은 FVC용 1·2·3과 KISA 안내서의 센서용 5·7·8·
 
 ### DeepPrint DLL과 평가 앱 빌드
 
-Windows x64에서 CMake·CTest 3.20 이상과 MSYS2 UCRT64의 `g++`, `mingw32-make`를 사용합니다. DeepPrint 빌드에는 `build/models/deepprint_texminu_512.onnx`와 `build/dependencies/onnxruntime/`가 필요합니다. [DeepPrint 최초 빌드 준비](#deepprint-최초-빌드-준비)
+Visual Studio에서는 위의 [새 PC에서 처음부터 실행](#새-pc에서-처음부터-실행-visual-studio-20222026-공통) 절차와 `deepprint-release` 프리셋을 사용합니다. 아래는 VS Code와 MSYS2 UCRT64의 `g++`, `mingw32-make`, CMake·CTest 3.20 이상을 사용하는 방법입니다. DeepPrint 빌드에는 `build/models/deepprint_texminu_512.onnx`와 `build/dependencies/onnxruntime/`가 필요합니다. [DeepPrint 최초 빌드 준비](#deepprint-최초-빌드-준비)
 
 평가 앱이 열려 있다면 빌드 전에 창을 닫습니다. **VS Code**에서 저장소 폴더를 열고 `Ctrl+Shift+B`를 눌러 **Build DeepPrint and evaluation app**을 실행합니다.
 
@@ -155,14 +275,13 @@ $cmake = if ($installedCmake) { $installedCmake.Source } else {
 
 | 산출물 | 역할 |
 | --- | --- |
-| `fingerprint_compare.exe` | 평가 설정, 실행, 중단, 보고서 열기 |
-| `fingerprint_worker_x64.exe` | 선택한 x64 DLL을 실행하는 별도 프로세스 |
+| `fingerprint_compare.exe` | 다섯 페이지 평가 앱 |
 | `IndustryAlgorithm.dll` | DeepPrint의 KISA 함수 구현과 FVC2004 영역 자르기 |
 | `deepprint_texminu_512.onnx`, `onnxruntime.dll` | DeepPrint 모델과 추론 런타임 |
 | `augment_fvc.exe`, `evaluate_noise.exe` | 영상 증강과 명령줄 일괄 평가 |
 | `tune_weights.exe` | 저장된 DeepPrint 템플릿으로 질감·특징점 가중치 비교 |
 
-평가기가 워커를 찾을 수 있도록 두 EXE를 같은 폴더에 둡니다. DeepPrint DLL을 복사할 때는 ONNX 모델과 런타임 DLL도 DeepPrint DLL 옆에 둡니다.
+DeepPrint DLL을 복사할 때는 ONNX 모델과 런타임 DLL도 DeepPrint DLL 옆에 둡니다.
 
 ### 평가 앱만 빌드
 
@@ -177,55 +296,19 @@ $cmake = if ($installedCmake) { $installedCmake.Source } else {
 .\build\evaluator-only\fingerprint_compare.exe
 ```
 
-앱은 DLL 아키텍처에 맞는 워커를 사용합니다. x86 DLL에는 Win32 CMake 구성(`FINGERPRINT_DEEPPRINT=OFF`)에서 빌드한 `fingerprint_worker_x86.exe`를 앱 옆에 둡니다.
+앱은 x64 DLL만 불러옵니다. x86(32비트) DLL을 선택하면 오류를 표시합니다.
 
 ### 평가 앱 사용
 
-DeepPrint와 함께 빌드한 앱은 저장소 루트의 터미널에서 아래 명령으로 실행합니다.
+앱 화면 구성과 사용 순서는 위의 [앱 사용](#앱-사용)을 참고합니다. MinGW로 빌드했다면 아래 명령으로 실행합니다.
 
 ```powershell
 .\build\evaluator\fingerprint_compare.exe
 ```
 
-1. **알고리즘 DLL**에 `build/evaluator/IndustryAlgorithm.dll`을 지정합니다. **테스트 DB 폴더**에는 전체 FVC를 포함하는 `data/fvc` 또는 개별 DB 폴더를 지정합니다.
-2. **알고리즘 생성물 폴더**, **로그 폴더**, **보고서 폴더**를 입력합니다. 기본값은 각각 `build/app-results/templates`, `build/app-results/logs`, `build/app-results/reports`입니다.
-3. 등록용·본인 비교·타인 비교에 각각 규칙을 선택합니다. **지정 촬영 번호** 또는 **무작위 표본**을 선택하면 오른쪽 칸에 촬영 번호 또는 표본 수를 입력합니다. 전체 평가에서는 **부분 평가 쌍 CSV**를 비워 둡니다.
-4. 시드, 동시 워커 수(1~16개), 쌍 타임아웃(초), 보고서 항목을 선택한 뒤 **평가 시작**을 누릅니다. 기본값은 시드 42, 워커 1개, 타임아웃 30초입니다.
-5. 실행을 종료하려면 **중단**을 누릅니다. 워커가 종료되면 처리된 쌍과 중단 상태가 기록됩니다. 결과가 저장되면 **보고서 열기**로 HTML을 기본 브라우저에서 엽니다.
-
-세 규칙을 **전체**로 선택하면 DB별 본인 280쌍과 타인 2,880쌍을 계획합니다. FVC 3개 DB를 함께 선택하면 9,480쌍입니다. 앱은 동일 이미지를 제외하고 시드에 따라 비교 순서를 섞습니다. **보고서 항목**에서는 인식 지표(EER·EER\*·FMR/FNMR), 실패율(FTE·본인/타인 REJ), 시간·템플릿 크기를 선택할 수 있습니다.
-
-### 부분 평가
-
-`pairs-input.csv`와 같은 이름으로 아래 형식의 UTF-8 CSV를 저장하고, 창의 **부분 평가 쌍 CSV**에서 선택합니다. 앱은 목록에 적힌 쌍을 시험에 사용합니다.
-
-```csv
-enrolled,probe
-FVC2000_DB3_B/101_1.tif,FVC2000_DB3_B/101_2.tif
-FVC2000_DB3_B/101_1.tif,FVC2000_DB3_B/102_1.tif
-```
-
-이 예시는 `data/fvc`를 선택했을 때의 형식입니다. `data/fvc/FVC2000_DB3_B`를 직접 선택했다면 `101_1.tif,101_2.tif`처럼 파일명만 적습니다. 각 행의 두 영상은 같은 DB에 속해야 합니다.
-
-### 결과 파일과 HTML 열기
-
-각 실행은 설정한 저장 폴더 아래에 같은 이름의 `run-...` 하위 폴더를 만듭니다. 기본 위치는 다음과 같습니다.
-
-| 기본 위치 | 내용 |
-| --- | --- |
-| `build/app-results/templates/run-.../` | 워커별 등록·비교 템플릿 |
-| `build/app-results/logs/run-.../plan.csv` | 무작위화된 시험 쌍 |
-| `build/app-results/logs/run-.../pairs.csv` | 쌍별 점수, 실패 단계, 시간 초과·비정상 종료·출력 오류 상태 |
-| `build/app-results/reports/run-.../report.html` | 시험 설정, 작업 결과, 선택한 지표 |
-| `reports/fingerprint_evaluation.html` | 저장소에서 실행한 평가 중 가장 최근에 완료된 보고서 |
-
-평가가 완료되면 앱은 실행별 `report.html`을 저장한 뒤 `reports/fingerprint_evaluation.html`을 같은 내용으로 갱신합니다. 중단 결과는 해당 실행의 **보고서 열기**에서 볼 수 있고, 공용 HTML에는 마지막 완료 결과가 표시됩니다. 저장소 루트에서 최신 보고서를 여는 명령은 다음과 같습니다.
-
-```powershell
-Start-Process .\reports\fingerprint_evaluation.html
-```
-
-CMD에서는 `start "" ".\reports\fingerprint_evaluation.html"`을 사용합니다.
+- 비교 목록은 02 페이지의 **전체 비교 쌍과 순서 저장**으로 CSV에 저장하고, 01 페이지의 **불러오기**로 같은 쌍과 순서를 다시 평가할 수 있습니다.
+- 평가 결과는 **보고서 저장**에서 지정한 위치에 HTML 한 파일로 저장합니다. 템플릿·로그 폴더를 따로 만들지 않으며,
+  `reports/fingerprint_evaluation.html`을 자동으로 갱신하지 않습니다.
 
 ### 자동 테스트
 
@@ -235,7 +318,9 @@ CMD에서는 `start "" ".\reports\fingerprint_evaluation.html"`을 사용합니�
 & (Join-Path (Split-Path -Parent $cmake) 'ctest.exe') --test-dir build/evaluator --output-on-failure
 ```
 
-`evaluation_workflow`는 시험 조합과 워커 오류 감지·강제 중단·보고서 생성을, `noise_and_metrics`는 증강과 평가 지표를 검사합니다. `deepprint_reference`는 `build/models/parity/`의 기준 벡터를 사용해 DeepPrint의 C++ 추론 결과를 대조합니다.
+Visual Studio 프리셋으로 빌드했다면 `ctest --preset deepprint-release`를 실행합니다.
+
+`noise_and_metrics`는 증강과 평가 지표를 검사합니다. `deepprint_reference`는 `build/models/parity/`의 기준 벡터를 사용해 DeepPrint의 C++ 추론 결과를 대조합니다.
 
 ## DeepPrint DLL과 노이즈 평가
 
@@ -243,7 +328,7 @@ DeepPrint DLL은 FVC 회색조 픽셀을 흰색 패딩과 안티앨리어싱 리
 
 ### DeepPrint 최초 빌드 준비
 
-위 CMake 환경에 더해 Git과 CPython 3.12가 필요합니다. Python은 최초 모델 변환과 기준 벡터 생성에 사용하며, 빌드된 DLL의 추론은 ONNX Runtime CPU로 실행합니다.
+위 CMake 환경(Visual Studio 또는 MSYS2)에 더해 Git과 CPython 3.12가 필요합니다. 아래 명령은 일반 PowerShell에서 저장소 루트를 기준으로 실행합니다. Python은 최초 모델 변환과 기준 벡터 생성에 사용하며, 빌드된 DLL의 추론은 ONNX Runtime CPU로 실행합니다.
 
 ```powershell
 # 소스와 가중치를 저장할 로컬 경로
@@ -268,6 +353,8 @@ Expand-Archive build/dependencies/onnxruntime.zip -DestinationPath build/depende
 모델이나 ONNX Runtime을 다른 폴더에 준비했다면 CMake에서 각각 `FINGERPRINT_DEEPPRINT_MODEL`, `FINGERPRINT_ONNXRUNTIME_ROOT`에 해당 경로를 지정합니다. [DeepPrint DLL과 평가 앱 빌드](#deepprint-dll과-평가-앱-빌드)
 
 ### 노이즈 TIFF 생성 및 일괄 평가
+
+아래 명령의 `build\evaluator`는 MinGW 빌드 경로입니다. Visual Studio 프리셋으로 빌드했다면 `build\deepprint-release`로 바꿉니다.
 
 아래 예시는 기준 시드 `42`와 8비트 픽셀 기준 가우시안 노이즈 `σ=2, 5, 10`을 사용합니다. 각 실행의 출력은 새 폴더에 저장합니다.
 
@@ -332,13 +419,13 @@ $exportPython = '.\build\dependencies\export-env\Scripts\python.exe'
 
 ## FVC2004 영역 자르기
 
-평가 앱이 시작할 때 기본으로 선택하는 `build/evaluator/IndustryAlgorithm.dll`은 `iType=3` 영상의 지문 영역을 자른 뒤 패딩과 리사이즈를 적용합니다. 전경이 충분히 검출되지 않으면 전체 프레임을 사용합니다. VS Code와 PowerShell 빌드는 `FINGERPRINT_FVC2004_ROI=ON`을 사용합니다.
+기본 설정으로 빌드한 `IndustryAlgorithm.dll`은 `iType=3` 영상의 지문 영역을 자른 뒤 패딩과 리사이즈를 적용합니다. 전경이 충분히 검출되지 않으면 전체 프레임을 사용합니다. 평가 앱의 **알고리즘 DLL 선택**에서 빌드한 DLL을 지정합니다.
 
 기존 전체 프레임 방식이 필요하면 별도 빌드 디렉터리에서 `-DFINGERPRINT_FVC2004_ROI=OFF`를 지정합니다. 두 빌드 모두 같은 사전학습 ONNX와 22:78 정합 가중치를 사용합니다. 영역 자르기를 활성화한 기준 벡터 테스트는 `build/models/parity/3.roi.*.f32`도 읽습니다. 빌드 준비 단계의 모델 내보내기 명령이 이 파일들을 생성합니다. [활성화 전 C++ DLL 비교](log/fvc2004-roi-validation-20261125/conclusion.txt)
 
 ## 평가 보고서
 
-평가 앱에서 선택한 인식 지표, 실패율, 처리 시간, 템플릿 크기는 완료된 실행의 HTML에 기록됩니다. [최신 평가 보고서](reports/fingerprint_evaluation.html)
+평가 앱의 **보고서 저장**은 인식 지표, 처리 실패, 처리 시간, 그래프와 비교별 결과를 HTML 한 파일에 기록합니다. [이전 평가 보고서](reports/fingerprint_evaluation.html)
 
 이전 원본·가우시안 노이즈 실험에서 생성한 그래프는 `reports/assets/`에 있습니다. [점수 분포](reports/assets/score-distributions.svg) · [DET](reports/assets/det-curves.svg) · [임계값별 오류율](reports/assets/threshold-curves.svg)
 

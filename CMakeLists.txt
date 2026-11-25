@@ -1,8 +1,12 @@
 cmake_minimum_required(VERSION 3.16)
 project(IndustryAlgorithm LANGUAGES CXX)
+set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT fingerprint_compare)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+if(MSVC)
+    add_compile_options(/utf-8 /DNOMINMAX)
+endif()
 
 option(FINGERPRINT_DEEPPRINT "Build the DeepPrint KISA DLL alongside the evaluation tools" OFF)
 option(FINGERPRINT_FVC2004_ROI "Crop foreground in DeepPrint KISA iType 3 inputs" ON)
@@ -68,38 +72,20 @@ add_library(verification_metrics STATIC tools/evaluation/verification_metrics.cp
 target_include_directories(verification_metrics PUBLIC tools/evaluation)
 
 if(FINGERPRINT_BUILD_GUI)
-    add_library(fingerprint_evaluation STATIC
-        app/evaluation/plan.cpp
-        app/evaluation/worker.cpp
-        app/evaluation/run.cpp
-        app/evaluation/report.cpp)
-    target_include_directories(fingerprint_evaluation PUBLIC app)
-    target_link_libraries(fingerprint_evaluation PUBLIC fingerprint_tiff verification_metrics)
-
-    add_executable(fingerprint_worker app/evaluation/worker_main.cpp)
-    target_include_directories(fingerprint_worker PRIVATE include)
-    target_link_libraries(fingerprint_worker PRIVATE fingerprint_evaluation)
-    if(CMAKE_SIZEOF_VOID_P EQUAL 4)
-        set(worker_suffix x86)
-    elseif(CMAKE_CXX_COMPILER_ARCHITECTURE_ID STREQUAL "ARM64"
-           OR CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|arm64|aarch64)$")
-        set(worker_suffix arm64)
-    else()
-        set(worker_suffix x64)
+    add_executable(fingerprint_compare WIN32
+        app/main.cpp app/comparison_window.cpp app/fingerprint_image.cpp)
+    target_include_directories(fingerprint_compare PRIVATE include)
+    target_compile_definitions(fingerprint_compare PRIVATE FINGERPRINT_DYNAMIC_BACKEND)
+    target_link_libraries(fingerprint_compare PRIVATE ole32 windowscodecs uuid comdlg32 gdi32)
+    if(FINGERPRINT_DEEPPRINT)
+        add_dependencies(fingerprint_compare IndustryAlgorithm)
     endif()
-    set_target_properties(fingerprint_worker PROPERTIES OUTPUT_NAME "fingerprint_worker_${worker_suffix}")
-
-    add_executable(fingerprint_compare WIN32 app/main.cpp app/evaluation_window.cpp)
-    target_link_libraries(fingerprint_compare PRIVATE fingerprint_evaluation comctl32 comdlg32 gdi32 shell32)
-    add_dependencies(fingerprint_compare fingerprint_worker)
     if(MSVC)
-        target_compile_options(fingerprint_evaluation PRIVATE /utf-8)
         target_compile_options(fingerprint_compare PRIVATE /utf-8)
     elseif(MINGW)
-        target_link_options(fingerprint_worker PRIVATE -municode -static)
         target_link_options(fingerprint_compare PRIVATE -municode -static -static-libstdc++)
     endif()
-    install(TARGETS fingerprint_compare fingerprint_worker RUNTIME DESTINATION .)
+    install(TARGETS fingerprint_compare RUNTIME DESTINATION .)
 endif()
 
 add_executable(augment_fvc tools/noise/main.cpp)
@@ -120,22 +106,8 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
-    if(FINGERPRINT_BUILD_GUI)
-        add_library(evaluation_fixture SHARED tests/evaluation_fixture.cpp)
-        target_include_directories(evaluation_fixture PRIVATE include)
-        add_executable(test_evaluation tests/test_evaluation.cpp)
-        target_link_libraries(test_evaluation PRIVATE fingerprint_evaluation)
-        add_dependencies(test_evaluation fingerprint_worker evaluation_fixture)
-        if(MSVC)
-            target_compile_options(test_evaluation PRIVATE /utf-8)
-        elseif(MINGW)
-            target_link_options(evaluation_fixture PRIVATE -static)
-            target_link_options(test_evaluation PRIVATE -municode -static)
-        endif()
-        add_test(NAME evaluation_workflow COMMAND test_evaluation "$<TARGET_FILE:evaluation_fixture>"
-                 "${CMAKE_CURRENT_SOURCE_DIR}/data/fvc")
-        set_tests_properties(evaluation_workflow PROPERTIES TIMEOUT 20)
-    endif()
+    # Upstream's evaluation_workflow tests its alternative app/evaluation modules.
+    # This branch retains the original five-file UI rather than those modules.
     add_executable(test_noise tests/test_noise.cpp)
     target_link_libraries(test_noise PRIVATE gaussian_noise fingerprint_augmentation verification_metrics)
     if(MINGW)

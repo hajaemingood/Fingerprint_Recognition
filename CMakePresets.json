@@ -1,0 +1,190 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "vs2022-x64",
+      "displayName": "Visual Studio 2022 x64 - DeepPrint + UI",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/vs2022-deepprint",
+      "cacheVariables": {
+        "BUILD_TESTING": "ON",
+        "FINGERPRINT_BUILD_GUI": "ON",
+        "FINGERPRINT_DEEPPRINT": "ON",
+        "FINGERPRINT_DEEPPRINT_REFERENCE_DIR": "${sourceDir}/build/models/parity"
+      }
+    },
+    {
+      "name": "vs2022-deepprint",
+      "inherits": "vs2022-x64",
+      "displayName": "DeepPrint DLL + UI",
+      "cacheVariables": {
+        "FINGERPRINT_DEEPPRINT": "ON"
+      }
+    },
+    {
+      "name": "vs2022-ui-only",
+      "inherits": "vs2022-x64",
+      "displayName": "Windows x64 UI only - select external KISA DLL",
+      "binaryDir": "${sourceDir}/build/vs2022-ui",
+      "cacheVariables": {
+        "FINGERPRINT_DEEPPRINT": "OFF",
+        "FINGERPRINT_DEEPPRINT_REFERENCE_DIR": "",
+        "BUILD_TESTING": "OFF"
+      }
+    },
+    {
+      "name": "msvc-ninja-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      },
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "cl"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "mingw-base",
+      "hidden": true,
+      "generator": "MinGW Makefiles",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "g++"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "ui-release",
+      "inherits": "msvc-ninja-base",
+      "displayName": "UI only - any Visual Studio (MSVC), Release",
+      "binaryDir": "${sourceDir}/build/ui-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FINGERPRINT_BUILD_GUI": "ON",
+        "FINGERPRINT_DEEPPRINT": "OFF",
+        "FINGERPRINT_DEEPPRINT_REFERENCE_DIR": "",
+        "BUILD_TESTING": "OFF"
+      }
+    },
+    {
+      "name": "ui-debug",
+      "inherits": "ui-release",
+      "displayName": "UI only - any Visual Studio (MSVC), Debug",
+      "binaryDir": "${sourceDir}/build/ui-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "ui-release-mingw",
+      "inherits": "mingw-base",
+      "displayName": "UI only - MSYS2 MinGW g++, Release",
+      "binaryDir": "${sourceDir}/build/ui-release-mingw",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FINGERPRINT_BUILD_GUI": "ON",
+        "FINGERPRINT_DEEPPRINT": "OFF",
+        "FINGERPRINT_DEEPPRINT_REFERENCE_DIR": "",
+        "BUILD_TESTING": "OFF"
+      }
+    },
+    {
+      "name": "deepprint-release",
+      "inherits": "msvc-ninja-base",
+      "displayName": "DeepPrint DLL + UI - any Visual Studio (MSVC), Release",
+      "binaryDir": "${sourceDir}/build/deepprint-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FINGERPRINT_BUILD_GUI": "ON",
+        "FINGERPRINT_DEEPPRINT": "ON",
+        "FINGERPRINT_DEEPPRINT_REFERENCE_DIR": "${sourceDir}/build/models/parity",
+        "BUILD_TESTING": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "vs2022-debug",
+      "configurePreset": "vs2022-x64",
+      "configuration": "Debug"
+    },
+    {
+      "name": "vs2022-release",
+      "configurePreset": "vs2022-x64",
+      "configuration": "Release"
+    },
+    {
+      "name": "vs2022-deepprint-release",
+      "configurePreset": "vs2022-deepprint",
+      "configuration": "Release"
+    },
+    {
+      "name": "vs2022-ui-release",
+      "configurePreset": "vs2022-ui-only",
+      "configuration": "Release",
+      "targets": [
+        "fingerprint_compare"
+      ]
+    },
+    {
+      "name": "ui-release",
+      "configurePreset": "ui-release",
+      "targets": [
+        "fingerprint_compare"
+      ]
+    },
+    {
+      "name": "ui-debug",
+      "configurePreset": "ui-debug",
+      "targets": [
+        "fingerprint_compare"
+      ]
+    },
+    {
+      "name": "ui-release-mingw",
+      "configurePreset": "ui-release-mingw",
+      "targets": [
+        "fingerprint_compare"
+      ]
+    },
+    {
+      "name": "deepprint-release",
+      "configurePreset": "deepprint-release"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "vs2022-release",
+      "configurePreset": "vs2022-x64",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "vs2022-debug",
+      "configurePreset": "vs2022-x64",
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "deepprint-release",
+      "configurePreset": "deepprint-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}
