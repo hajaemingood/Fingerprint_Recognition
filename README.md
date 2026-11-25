@@ -6,6 +6,49 @@
 기존 `app/` 다섯 파일로 다섯 페이지 UI(설정 / 비교 결과 / 인식 성능 / 처리 성능 / 평가 요약)를 구성합니다.
 아래 upstream 문서의 `app/evaluation/` 워커·보고서 UI와는 다른 UI입니다.
 
+### 새 PC에서 처음부터 실행 (Visual Studio 2022·2026 공통)
+
+`build/`의 DLL·모델·런타임은 Git에 포함되지 않으므로, 클론 직후에는 아래 절차로 한 번 준비합니다.
+`ui-*`, `deepprint-release` 프리셋은 Visual Studio 버전 이름에 묶이지 않는 Ninja + MSVC 구성입니다.
+기존 `vs2022-*` 프리셋은 VS 2022 전용으로 그대로 유지합니다.
+
+**필요한 것:** Visual Studio 2022 이상의 **C++를 사용한 데스크톱 개발** 워크로드(Windows용 C++ CMake 도구 포함), Git, Python 3.12
+
+1. **모델과 ONNX Runtime 준비** — 일반 PowerShell에서 저장소 루트로 이동해 [DeepPrint 최초 빌드 준비](#deepprint-최초-빌드-준비)의 명령을 그대로 실행합니다.
+   완료되면 `build/models/deepprint_texminu_512.onnx`, `build/models/parity/`, `build/dependencies/onnxruntime/`가 생깁니다.
+2. **DLL과 UI 빌드** — Visual Studio에서 **로컬 폴더 열기**로 저장소 루트를 열고, 상단 구성에서 `deepprint-release`를 선택한 뒤
+   **빌드 → 모두 빌드**를 실행합니다. 명령줄에서는 아래처럼 x64 개발자 셸에서 실행합니다.
+
+   ```powershell
+   # Developer PowerShell for VS는 기본이 x86이므로 x64로 전환합니다.
+   & "$env:VSINSTALLDIR\Common7\Tools\Launch-VsDevShell.ps1" -Arch amd64 -HostArch amd64
+   cd <저장소 경로>
+   cmake --preset deepprint-release
+   cmake --build --preset deepprint-release
+   ctest --preset deepprint-release   # 100% tests passed 확인
+   ```
+
+3. **실행** — `build/deepprint-release/`에 `fingerprint_compare.exe`, `IndustryAlgorithm.dll`,
+   `deepprint_texminu_512.onnx`, `onnxruntime.dll`이 함께 생성됩니다. 앱을 실행하고 **알고리즘 DLL 선택**에서
+   같은 폴더의 `IndustryAlgorithm.dll`을 선택합니다.
+
+UI만 수정할 때는 `ui-release`(또는 `ui-debug`)를 선택합니다. 출력은 `build/ui-release/fingerprint_compare.exe`이며,
+이후 받은 DLL만 교체하는 경우 `onnxruntime.dll`과 `deepprint_texminu_512.onnx`를 실행 파일 폴더에 한 번 두면 재사용됩니다.
+MSYS2 MinGW g++ 환경에서는 `ui-release-mingw`를 사용하며 `g++`, `mingw32-make`가 PATH에 있어야 합니다.
+
+| 프리셋 | 컴파일러 | 빌드 대상 | 출력 폴더 |
+| --- | --- | --- | --- |
+| `ui-release` / `ui-debug` | MSVC (VS 2022·2026) | UI | `build/ui-release`, `build/ui-debug` |
+| `ui-release-mingw` | MSYS2 g++ | UI | `build/ui-release-mingw` |
+| `deepprint-release` | MSVC (VS 2022·2026) | DeepPrint DLL + UI + 테스트 | `build/deepprint-release` |
+
+**문제 해결**
+
+- `cmake`를 찾을 수 없음: 일반 PowerShell이 아니라 Developer PowerShell(또는 VS 터미널)에서 실행합니다.
+- `CMakeLists.txt:37`의 "DeepPrint requires a Windows x64 build": x86 셸에서 구성된 경우입니다. 위의 x64 전환 후
+  `cmake --preset deepprint-release --fresh`를 실행하거나, VS에서 **프로젝트 → CMake 캐시 삭제 및 다시 구성**을 실행합니다.
+- 빌드 직후 VS 테스트 메뉴에서 "Process not started"가 나오면 잠시 후 `ctest --preset deepprint-release`로 다시 확인합니다.
+
 팀원이 UI만 개발하고 기존 DLL을 연결하려면 모델 변환이나 ONNX SDK 설치 없이 다음 설정을 사용합니다.
 Visual Studio의 C++ 데스크톱 개발 도구와 CMake가 필요하며 Windows x64 기준입니다.
 
