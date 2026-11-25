@@ -651,7 +651,7 @@ void drawSetupPage(AppState &s, HDC dc)
     write(s, dc, L"알고리즘 DLL", 48, 526, 332, 30, Medium);
     write(s, dc, L"x64 · 공통 KISA 인터페이스", 48, 674, 332, 24, Body, kAccent);
     write(s, dc, L"Enroll / Attempt / Compare 함수가 필요합니다", 48, 708, 332, 22, Small, kMuted);
-    write(s, dc, L"종속 DLL과 모델은 선택한 DLL 폴더에 두세요", 48, 744, 332, 22, Small, kMuted);
+    write(s, dc, L"DeepPrint 모델·런타임은 실행 폴더에서 재사용", 48, 744, 332, 22, Small, kMuted);
     write(s, dc, L"비교 목록 규칙", 448, 216, 372, 30, Medium);
     write(s, dc, L"등록 이미지", 448, 252, 270, 28, Body);
     write(s, dc, L"본인 비교 · 같은 손가락", 448, 338, 290, 28, Body);
@@ -1528,7 +1528,8 @@ void command(AppState &s, int id, int code)
         s.completed = 0;
         s.elapsedMilliseconds = 0;
         s.workerError.clear();
-        s.status = L"DLL 연결 확인 완료 · 새 알고리즘으로 비교를 실행하세요. 병렬 지원 여부를 "
+        s.status = L"DLL 연결 확인 완료 · 새 알고리즘으로 비교를 실행하세요. "
+                   L"병렬 지원 여부를 "
                    L"확인한 뒤 동시 비교 수를 늘리세요.";
         refreshTable(s);
         updateEnabled(s);

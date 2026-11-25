@@ -542,6 +542,102 @@ fs::path backendDirectory()
     return fs::path(path).parent_path();
 }
 #ifdef FINGERPRINT_DYNAMIC_BACKEND
+// DeepPrint locates its runtime/model relative to the loaded DLL itself.
+// A private, versioned copy lets an external replacement reuse the app's assets
+// without modifying its source folder or an already-loaded (pinned) DLL.
+fs::path prepareBackend(const fs::path &selected)
+{
+    const auto source = fs::weakly_canonical(selected);
+    std::ifstream input(source, std::ios::binary);
+    if (!input)
+        throw std::runtime_error("선택한 DLL 파일을 읽을 수 없습니다.");
+    std::string contents((std::istreambuf_iterator<char>(input)), {});
+    const std::wstring modelName = L"deepprint_texminu_512.onnx";
+    const std::string wideMarker(reinterpret_cast<const char *>(modelName.data()),
+                                 modelName.size() * sizeof(wchar_t));
+    if (contents.find("deepprint_texminu_512.onnx") == std::string::npos &&
+        contents.find(wideMarker) == std::string::npos)
+        return source; // Other KISA algorithms keep their own dependency layout.
+    const auto originalFolder = source.parent_path();
+    const auto appFolder = backendDirectory();
+    std::vector<fs::path> assets;
+    bool needsFallback = false;
+    for (const auto *name : {L"onnxruntime.dll", L"deepprint_texminu_512.onnx"})
+    {
+        auto asset = originalFolder / name;
+        if (!fs::is_regular_file(asset))
+        {
+            asset = appFolder / name;
+            needsFallback = true;
+        }
+        if (!fs::is_regular_file(asset))
+            throw std::runtime_error("DeepPrint 모델 또는 런타임이 없습니다. onnxruntime.dll과 "
+                                     "deepprint_texminu_512.onnx를 실행 파일 폴더에 준비하세요.");
+        assets.push_back(asset);
+    }
+    if (!needsFallback)
+        return source;
+    // Include adjacent DLL dependencies as well as the known model/runtime.
+    for (const auto &entry : fs::directory_iterator(originalFolder))
+    {
+        auto extension = entry.path().extension().wstring();
+        std::transform(extension.begin(), extension.end(), extension.begin(), ::towlower);
+        if (entry.is_regular_file() && extension == L".dll" && entry.path() != source &&
+            entry.path().filename() != L"onnxruntime.dll")
+            assets.push_back(entry.path());
+    }
+    std::sort(assets.begin(), assets.end());
+    unsigned long long hash = 14695981039346656037ull;
+    auto append = [&](const std::string &value)
+    {
+        for (unsigned char c : value)
+        {
+            hash ^= c;
+            hash *= 1099511628211ull;
+        }
+    };
+    append(contents);
+    append(source.u8string());
+    for (const auto &asset : assets)
+    {
+        append(asset.u8string());
+        append(std::to_string(fs::file_size(asset)));
+        append(std::to_string(fs::last_write_time(asset).time_since_epoch().count()));
+    }
+    std::ostringstream key;
+    key << std::hex << hash;
+    const auto directory =
+        fs::temp_directory_path() / L"FingerprintLab" / L"backends" / fs::u8path(key.str());
+    fs::create_directories(directory);
+    auto copy = [&](const fs::path &from)
+    {
+        auto to = directory / from.filename();
+        if (fs::is_regular_file(to) && fs::file_size(from) == fs::file_size(to))
+            return;
+        // Publish only complete copies; interrupted copies cannot become a valid cache entry.
+        GUID id{};
+        if (FAILED(CoCreateGuid(&id)))
+            throw std::runtime_error("DLL 실행 폴더를 준비하지 못했습니다.");
+        wchar_t token[40]{};
+        StringFromGUID2(id, token, 40);
+        auto temporary = directory / token;
+        try
+        {
+            fs::copy_file(from, temporary);
+            fs::rename(temporary, to);
+        }
+        catch (...)
+        {
+            std::error_code ignored;
+            fs::remove(temporary, ignored);
+            throw;
+        }
+    };
+    for (const auto &asset : assets)
+        copy(asset);
+    copy(source);
+    return directory / source.filename();
+}
 struct Backend
 {
     HMODULE library = nullptr;
@@ -552,7 +648,8 @@ struct Backend
     {
         if (selected.empty())
             throw std::runtime_error("먼저 알고리즘 DLL을 선택하세요.");
-        const auto dll = fs::absolute(selected);
+        const auto original = fs::absolute(selected);
+        const auto dll = original;
         std::ifstream input(dll, std::ios::binary);
         IMAGE_DOS_HEADER dos{};
         input.read(reinterpret_cast<char *>(&dos), sizeof(dos));
@@ -568,7 +665,8 @@ struct Backend
         if (header.Machine != IMAGE_FILE_MACHINE_AMD64)
             throw std::runtime_error(
                 "이 앱은 x64 DLL이 필요합니다. 32비트 또는 다른 아키텍처 DLL입니다.");
-        library = LoadLibraryExW(dll.c_str(), nullptr,
+        const auto loadPath = prepareBackend(original);
+        library = LoadLibraryExW(loadPath.c_str(), nullptr,
                                  LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
         if (!library)
             throw std::runtime_error("선택한 DLL을 읽을 수 없습니다. DLL과 같은 폴더에 필요한 종속 "

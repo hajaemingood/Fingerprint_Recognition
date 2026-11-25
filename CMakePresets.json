@@ -21,6 +21,17 @@
       "cacheVariables": {
         "FINGERPRINT_DEEPPRINT": "ON"
       }
+    },
+    {
+      "name": "vs2022-ui-only",
+      "inherits": "vs2022-x64",
+      "displayName": "Windows x64 UI only - select external KISA DLL",
+      "binaryDir": "${sourceDir}/build/vs2022-ui",
+      "cacheVariables": {
+        "FINGERPRINT_DEEPPRINT": "OFF",
+        "FINGERPRINT_DEEPPRINT_REFERENCE_DIR": "",
+        "BUILD_TESTING": "OFF"
+      }
     }
   ],
   "buildPresets": [
@@ -38,6 +49,14 @@
       "name": "vs2022-deepprint-release",
       "configurePreset": "vs2022-deepprint",
       "configuration": "Release"
+    },
+    {
+      "name": "vs2022-ui-release",
+      "configurePreset": "vs2022-ui-only",
+      "configuration": "Release",
+      "targets": [
+        "fingerprint_compare"
+      ]
     }
   ],
   "testPresets": [
