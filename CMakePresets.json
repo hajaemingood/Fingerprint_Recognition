@@ -3,21 +3,21 @@
   "configurePresets": [
     {
       "name": "vs2022-x64",
-      "displayName": "Visual Studio 2022 x64 - preserved UI",
+      "displayName": "Visual Studio 2022 x64 - DeepPrint + UI",
       "generator": "Visual Studio 17 2022",
       "architecture": "x64",
       "binaryDir": "${sourceDir}/build/vs2022-deepprint",
       "cacheVariables": {
         "BUILD_TESTING": "ON",
         "FINGERPRINT_BUILD_GUI": "ON",
-        "FINGERPRINT_DEEPPRINT": "OFF"
+        "FINGERPRINT_DEEPPRINT": "ON",
+        "FINGERPRINT_DEEPPRINT_REFERENCE_DIR": "${sourceDir}/build/models/parity"
       }
     },
     {
       "name": "vs2022-deepprint",
       "inherits": "vs2022-x64",
-      "displayName": "DeepPrint DLL + UI (model/runtime required)",
-      "binaryDir": "${sourceDir}/build/vs2022-deepprint-model",
+      "displayName": "DeepPrint DLL + UI",
       "cacheVariables": {
         "FINGERPRINT_DEEPPRINT": "ON"
       }
@@ -45,6 +45,14 @@
       "name": "vs2022-release",
       "configurePreset": "vs2022-x64",
       "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "vs2022-debug",
+      "configurePreset": "vs2022-x64",
+      "configuration": "Debug",
       "output": {
         "outputOnFailure": true
       }

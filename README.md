@@ -3,26 +3,43 @@
 ## 로컬 UI 통합 브랜치
 
 이 브랜치는 upstream `2387ff7`의 `src/`, `include/`, 데이터와 도구를 반영하면서,
-기존 `app/` 다섯 파일과 네 페이지 UI(설정 / 비교 결과 / 인식 성능 / 처리 성능)를 유지합니다.
+기존 `app/` 다섯 파일로 다섯 페이지 UI(설정 / 비교 결과 / 인식 성능 / 처리 성능 / 평가 요약)를 구성합니다.
 아래 upstream 문서의 `app/evaluation/` 워커·보고서 UI와는 다른 UI입니다.
 
-Visual Studio에서는 `CMakePresets.json`의 `vs2022-x64`를 선택합니다.
-`cmake --preset vs2022-x64` 후 `cmake --build --preset vs2022-debug`로 앱과 도구를 빌드합니다.
-출력 위치는 `build/vs2022-deepprint/Debug/`입니다. 이 기본 구성은 앱만 빌드하며,
-이전 `build/vs2022/`의 히스토그램 DLL을 사용하지 않습니다.
+Visual Studio에서 `vs2022-debug`를 선택하고 시작 항목을 `fingerprint_compare.exe`로 지정합니다.
+기본 `vs2022-x64` 구성은 **DeepPrint DLL과 UI를 함께 빌드**합니다.
+명령줄에서는 `cmake --preset vs2022-x64` 후 `cmake --build --preset vs2022-debug`를 실행합니다.
+출력 위치는 `build/vs2022-deepprint/Debug/`입니다.
 
-실제 DeepPrint 평가에는 같은 출력 폴더에 `IndustryAlgorithm.dll`,
-`deepprint_texminu_512.onnx`, `onnxruntime.dll`이 필요합니다.
-모델·ONNX Runtime을 아래 최초 빌드 준비 절차대로 준비한 뒤,
-`cmake --preset vs2022-deepprint`와 `cmake --build --preset vs2022-deepprint-release`로
-최신 DLL과 UI를 함께 빌드할 수 있습니다. 이 구성의 출력은
-`build/vs2022-deepprint-model/Release/`입니다.
-모델과 런타임은 Git에 포함되어 있지 않으므로 별도로 준비해야 합니다.
+실행 폴더에는 `fingerprint_compare.exe`, `IndustryAlgorithm.dll`,
+`deepprint_texminu_512.onnx`, `onnxruntime.dll`이 함께 있어야 합니다.
+모델과 런타임은 `build/models/`, `build/dependencies/onnxruntime/`에 준비하고
+빌드 시 실행 폴더로 자동 복사합니다. 새 PC에서 저장소를 내려받을 경우 이 파일들은
+Git에 포함되어 있지 않으므로 아래 최초 빌드 준비 절차를 먼저 수행해야 합니다.
+모델 기준 벡터는 `build/models/parity/`에 저장하고 CTest로 실제 C++ 추론과 대조합니다.
 
-앱은 실행 파일 옆의 DLL만 동적으로 로드하고, DeepPrint 템플릿 형식이 아닌
-이전 히스토그램 템플릿을 거부합니다. 기존 FVC2002 `DB3_B` 경로로 저장한 CSV는
-이름이 바뀐 `DB2_B` 폴더로 연결하며 비교 쌍과 순서를 그대로 유지합니다.
-`src/` 알고리즘은 upstream 코드 그대로 사용하며 여기서 수정하지 않았습니다.
+앱에서 **DB 폴더**와 **알고리즘 DLL**을 직접 선택합니다. DLL은 x64이며 공통 KISA
+`KISA_Enroll`, `KISA_Attempt`, `KISA_Compare` C ABI와 `__cdecl` 호출 규약을 따라야 합니다.
+템플릿은 최대 1,000,000바이트의 불투명 데이터로 취급하며 정합 점수는 높을수록 유사한 0~1 값입니다.
+DLL의 종속 라이브러리와 모델은 선택한 DLL 폴더에 준비합니다. DeepPrint의 경우
+`onnxruntime.dll`과 `deepprint_texminu_512.onnx`가 필요합니다.
+처음에는 동시 비교 수 1로 실행하고 DLL의 병렬 호출 지원을 확인한 뒤 늘립니다.
+DB는 한 폴더의 `손가락번호_촬영번호.tif` 또는 `.tiff` 파일을 사용합니다.
+
+특징 재사용을 켜면 한 실행에서 같은 테스트 이미지의 특징을 한 번만 추출합니다.
+비교 쌍 CSV는 실제 순서를 저장하며, 다른 PC에서 원래 DB 경로가 없으면 같은 이름의 DB를
+먼저 선택한 뒤 불러올 수 있습니다. CSV를 불러와도 선택한 DLL은 자동으로 바뀌지 않습니다.
+
+평가 요약은 **핵심 결과 / 상세 지표 / 그래프**로 나눕니다.
+평가 후 **보고서 저장**에서 UTF-8 HTML 파일을 저장하면 지표, 실험 설정, SVG 그래프,
+비교별 결과를 외부 리소스 없이 확인할 수 있습니다. 보고서의 인쇄 버튼으로 PDF 저장도 가능합니다.
+중단한 실행은 부분 결과로 표시하며, 처리 실패와 미완료 행을 보고서에 보존합니다.
+EER 계열 지표는 선택 목록 기준이며 공식 FVC 순위와 직접 비교할 수 없습니다.
+RAM은 앱·모델·캐시 전체의 Working Set을 관측한 값입니다.
+
+로컬 배포 묶음은 `dist/FingerprintDemo/`에 준비합니다. `build/`, `dist/`, 모델과 런타임 DLL은
+Git에 포함되지 않습니다. 다른 PC에는 실행 파일뿐 아니라 배포 폴더 전체를 옮깁니다.
+`src/`와 `include/`는 upstream 그대로 사용하며 앱 개발에서 수정하지 않습니다.
 
 ---
 
