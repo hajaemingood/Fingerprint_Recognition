@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 project(IndustryAlgorithm LANGUAGES CXX)
+set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT fingerprint_compare)
 
 add_library(IndustryAlgorithm SHARED
     src/api/kisa_api.cpp

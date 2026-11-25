@@ -71,6 +71,25 @@ DLL에는 파일 경로 대신 디코딩된 8비트 회색조 픽셀 배열을 �
 
 ## 실행 방법
 
+### Visual Studio 2022
+
+1. Visual Studio에서 **파일 → 열기 → 폴더**로 이 저장소 폴더를 엽니다.
+2. CMake 구성에서 **Visual Studio 2022 x64** (`vs2022-x64`)를 선택합니다.
+3. 시작 대상으로 **fingerprint_compare.exe**를 선택하고 `F5`를 누릅니다.
+4. 등록용·비교용 TIFF를 한 장씩 선택하면 두 미리보기가 표시됩니다. **비교**를 누르면 0~1 점수가 표시됩니다.
+
+이미지를 불러올 때 TIFF 형식과 지원 크기를 검사합니다. 지원하지 않는 파일을 선택하면 오류를 알리고 기존 선택을 유지합니다. 점수는 기존 밝기 히스토그램 알고리즘의 초안 결과이며 동일인 여부를 판정하지 않습니다.
+
+Visual Studio의 **C++를 사용한 데스크톱 개발** 구성 요소가 필요합니다. 솔루션으로 작업하려면 CMake가 있는 터미널에서 다음을 실행합니다.
+
+```powershell
+cmake --preset vs2022-x64
+cmake --build --preset vs2022-release
+ctest --preset vs2022-release
+```
+
+생성된 `build/vs2022/IndustryAlgorithm.sln`을 Visual Studio에서 열고 **Release / x64**를 선택합니다. UI 코드는 `app/comparison_window.cpp`에 있으며, 빌드한 실행 파일은 `build/vs2022/Release/fingerprint_compare.exe`입니다.
+
 ### 실제 지문 파일 비교
 
 1. VS Code에서 저장소 루트를 엽니다. 기본 빌드 설정은 MSYS2 UCRT64의 `C:\msys64\ucrt64\bin\g++.exe`를 사용합니다.
