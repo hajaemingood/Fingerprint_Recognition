@@ -48,7 +48,7 @@ struct Settings
     int randomCount = 3;
     unsigned seed = 2026;
     int parallelism = 2;
-    bool reuseFeatures = true;
+    bool reuseFeatures = false;
 };
 struct ImageFile
 {

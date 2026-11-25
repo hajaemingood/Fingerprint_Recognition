@@ -61,13 +61,14 @@ enum Id
     NavSummary,
     NextPage,
     ChartRoc,
-    ReuseFeatures,
     DllPath,
     BrowseDll,
     SummaryOverview,
     SummaryDetails,
     SummaryCharts,
-    SaveReport
+    SaveReport,
+    PreviousStep,
+    NextStep
 };
 enum Font
 {
@@ -116,7 +117,7 @@ struct AppState
     }
 };
 
-// 1. Geometry and drawing helpers. All positions use a 1280 x 830 design canvas.
+// 1. Geometry and drawing helpers. All positions use a 1280 x 884 design canvas.
 RECT box(const AppState &s, int x, int y, int w, int h)
 {
     return {static_cast<LONG>(x * s.sx), static_cast<LONG>(y * s.sy),
@@ -255,12 +256,14 @@ void updatePageVisibility(AppState &s)
     // Controls exist once. Only their page is visible and reachable with Tab.
     for (const auto &[id, control] : s.controls)
     {
-        bool visible = id >= NavSettings && id <= NavSummary;
+        bool visible =
+            (id >= NavSettings && id <= NavSummary) || id == PreviousStep || id == NextStep;
+        if (s.page >= 2 && s.running && id == RunStop)
+            visible = true;
         if (s.page == 0)
             visible = visible || id == Db || id == BrowseDb || id == DllPath || id == BrowseDll ||
                       id == Registration || id == Genuine || id == Impostor || id == RandomCount ||
-                      id == Parallel || id == Generate || id == NextPage || id == LoadPairs ||
-                      id == ReuseFeatures;
+                      id == Parallel || id == Generate || id == NextPage || id == LoadPairs;
         if (s.page == 1)
             visible = visible || (id >= FilterAll && id <= FilterErrors) || id == PairTable ||
                       id == RunStop || id == SavePairs || id == LoadPairs ||
@@ -285,7 +288,7 @@ void updateEnabled(AppState &s)
 {
     for (int id :
          {Db, BrowseDb, DllPath, BrowseDll, Registration, Genuine, Impostor, RegistrationIndex,
-          GenuineIndex, ImpostorIndex, RandomCount, Generate, Parallel, LoadPairs, ReuseFeatures})
+          GenuineIndex, ImpostorIndex, RandomCount, Generate, Parallel, LoadPairs})
         EnableWindow(s.controls.at(id), !s.running);
     EnableWindow(s.controls.at(SaveReport),
                  !s.running && !s.dirty && s.workerError.empty() && s.statistics.completed > 0);
@@ -297,6 +300,18 @@ void updateEnabled(AppState &s)
     bool random =
         selected(s, Registration) == 1 || selected(s, Genuine) == 2 || selected(s, Impostor) == 2;
     EnableWindow(s.controls.at(RandomCount), !s.running && random);
+    EnableWindow(s.controls.at(PreviousStep), s.page > 0);
+    bool canRun = !s.dirty && !s.plan.pairs.empty() && !s.algorithm.empty();
+    bool canExport = !s.running && !s.dirty && s.workerError.empty() && s.statistics.completed > 0;
+    bool nextEnabled = s.page == 0   ? !s.running && !s.database.empty()
+                       : s.page == 1 ? s.running || canRun
+                       : s.page == 4 ? canExport
+                                     : s.running || s.statistics.completed > 0;
+    EnableWindow(s.controls.at(NextStep), nextEnabled);
+    const wchar_t *nextLabels[]{L"비교 목록 확인  →", L"비교 실행 · 인식 성능  →",
+                                L"처리 성능 보기  →", L"평가 요약 보기  →", L"보고서 저장  ↓"};
+    SetWindowTextW(s.controls.at(NextStep),
+                   s.page == 1 && s.running ? L"인식 성능 보기  →" : nextLabels[s.page]);
     SetWindowTextW(s.controls.at(RunStop), s.running ? L"비교 중지" : L"비교 실행  →");
     updatePageVisibility(s);
 }
@@ -305,7 +320,7 @@ void layout(AppState &s)
     RECT area{};
     GetClientRect(s.window, &area);
     s.sx = area.right / 1280.;
-    s.sy = area.bottom / 830.;
+    s.sy = area.bottom / 884.;
     makeFonts(s);
     for (int page = 0; page < 5; ++page)
         place(s, NavSettings + page, 24 + 250 * page, 126, 232, 44);
@@ -325,10 +340,15 @@ void layout(AppState &s)
     place(s, ImpostorIndex, 758, 424, 62, 28);
     place(s, RandomCount, 448, 546, 372, 38);
     place(s, Parallel, 888, 288, 344, 38);
-    place(s, ReuseFeatures, 448, 608, 372, 28);
+
     place(s, Generate, 888, 432, 344, 44);
     place(s, NextPage, 888, 492, 344, 44);
-    place(s, RunStop, 1036, 330, 220, 40);
+    place(s, PreviousStep, 24, 818, 180, 36);
+    place(s, NextStep, 1036, 818, 220, 36);
+    if (s.page == 1)
+        place(s, RunStop, 1036, 330, 220, 40);
+    else
+        place(s, RunStop, 824, 818, 196, 36);
     place(s, FilterAll, 24, 330, 90, 40);
     place(s, FilterGenuine, 124, 330, 90, 40);
     place(s, FilterImpostor, 224, 330, 90, 40);
@@ -396,8 +416,7 @@ Settings settings(AppState &s)
     out.seed =
         std::random_device{}() & 0x7fffffffu; // Internal only; CSV stores the exact selected pairs.
     out.parallelism = positiveInput(s, Parallel, 16);
-    out.reuseFeatures =
-        SendMessageW(s.controls.at(ReuseFeatures), BM_GETCHECK, 0, 0) == BST_CHECKED;
+    out.reuseFeatures = false;
     return out;
 }
 bool failed(const Result &r)
@@ -485,8 +504,7 @@ void startOrStop(AppState &s)
         return;
     s.plan.settings.algorithm = s.algorithm;
     s.plan.settings.parallelism = positiveInput(s, Parallel, 16);
-    s.plan.settings.reuseFeatures =
-        SendMessageW(s.controls.at(ReuseFeatures), BM_GETCHECK, 0, 0) == BST_CHECKED;
+    s.plan.settings.reuseFeatures = false;
     if (s.worker.joinable())
         s.worker.join();
     s.results.assign(s.plan.pairs.size(), {});
@@ -861,14 +879,12 @@ void drawPerformancePage(AppState &s, HDC dc)
                         : L"비교를 실행하면 처리 성능이 표시됩니다",
               48, 422, 452, 52, Body, kMuted);
     write(s, dc, L"시간 지표 읽는 방법", 48, 576, 452, 30, Medium);
-    write(s, dc, L"비교 지연: 캐시 대기·버퍼 준비·추출·정합 포함", 48, 626, 452, 26, Body);
+    write(s, dc, L"비교 지연: 버퍼 준비·특징 추출·정합 포함", 48, 626, 452, 26, Body);
     write(s, dc, L"병렬 비교 시간은 개별 지연 시간을 더한 값이 아닙니다", 48, 666, 452, 26, Small,
           kMuted);
     write(s, dc,
-          (s.plan.settings.reuseFeatures ? L"특징 재사용 켬 · 추출 " : L"매번 특징 추출 · 추출 ") +
-              std::to_wstring(timing.attemptCalls) + L"회 / 재사용 " +
-              std::to_wstring(timing.cacheHits) + L"회",
-          48, 706, 452, 26, Small);
+          L"테스트 특징 추출 " + std::to_wstring(s.timing.attemptCalls) + L"회 · 매 비교마다 수행",
+          48, 720, 448, 24, Small, kMuted);
     write(s, dc, L"작업 배정과 완료 순서는 실행마다 달라질 수 있습니다", 48, 748, 452, 22, Small,
           kMuted);
     const int slots = static_cast<int>(
@@ -1139,23 +1155,28 @@ void drawDashboard(AppState &s, HDC dc)
         drawPerformancePage(s, dc);
     else
         drawSummaryPage(s, dc);
-    line(s, dc, 26, 808, 1254, 808, kBorder);
-    dot(s, dc, 28, 818, 6, s.running ? kAccent : kGenuine);
-    write(s, dc, s.status, 43, 807, 1195, 25, Small, kMuted);
+    fill(dc, box(s, 0, 808, 1280, 52), kCard);
+    line(s, dc, 24, 808, 1256, 808, kBorder);
+    std::wstring stepStatus = s.running ? L"평가 중  " + std::to_wstring(s.statistics.completed) +
+                                              L" / " + std::to_wstring(s.plan.pairs.size()) + L"쌍"
+                                        : L"단계 " + std::to_wstring(s.page + 1) + L" / 5";
+    write(s, dc, stepStatus, 228, 821, s.running ? 570 : 780, 28, Body, kMuted);
+    dot(s, dc, 28, 872, 6, s.running ? kAccent : kGenuine);
+    write(s, dc, s.status, 43, 861, 1195, 22, Small, kMuted);
 }
 
 void drawButton(AppState &s, const DRAWITEMSTRUCT &item)
 {
     int id = static_cast<int>(item.CtlID);
     bool disabled = (item.itemState & ODS_DISABLED) != 0;
-    bool primary = id == RunStop || id == NextPage;
+    bool primary = id == RunStop || id == NextPage || id == NextStep;
     bool active =
         (id >= FilterAll && id <= FilterErrors && id - FilterAll == s.filter) ||
         (id >= ChartDistribution && id <= ChartErrors && id - ChartDistribution == s.chart) ||
         (id == ChartRoc && s.chart == 2) ||
         (id >= NavSettings && id <= NavSummary && id - NavSettings == s.page) ||
         (id >= SummaryOverview && id <= SummaryCharts && id - SummaryOverview == s.summaryTab);
-    COLORREF bg = primary  ? (s.running ? kDanger : kAccent)
+    COLORREF bg = primary  ? (id == RunStop && s.running ? kDanger : kAccent)
                   : active ? kAccentLight
                            : RGB(248, 249, 253);
     COLORREF fg = primary ? RGB(255, 255, 255) : active ? kAccent : kMuted;
@@ -1277,8 +1298,7 @@ void useImportedPlan(AppState &s, Plan plan)
                        {RandomCount, static_cast<unsigned>(config.randomCount)},
                        {Parallel, static_cast<unsigned>(config.parallelism)}})
         SetWindowTextW(s.controls.at(entry.first), std::to_wstring(entry.second).c_str());
-    SendMessageW(s.controls.at(ReuseFeatures), BM_SETCHECK,
-                 config.reuseFeatures ? BST_CHECKED : BST_UNCHECKED, 0);
+    plan.settings.reuseFeatures = false;
     s.ready = true;
     s.plan = std::move(plan);
     s.results.assign(s.plan.pairs.size(), {});
@@ -1406,6 +1426,35 @@ void command(AppState &s, int id, int code)
         invalidate(s);
         return;
     }
+    if (id == PreviousStep)
+    {
+        s.page = (std::max)(0, s.page - 1);
+        layout(s);
+        return;
+    }
+    if (id == NextStep)
+    {
+        if (s.page == 4)
+            id = SaveReport;
+        else if (s.page == 1)
+        {
+            if (s.running)
+            {
+                s.page = 2;
+                layout(s);
+                return;
+            }
+            id = RunStop;
+        }
+        else
+        {
+            if (s.page == 0 && (s.dirty || s.plan.pairs.empty()))
+                generate(s);
+            s.page = (std::min)(4, s.page + 1);
+            layout(s);
+            return;
+        }
+    }
     if (id == SaveReport)
     {
         if (s.running || s.dirty || !s.workerError.empty() || !s.statistics.completed)
@@ -1463,8 +1512,7 @@ void command(AppState &s, int id, int code)
             return;
         auto plan = s.plan;
         plan.settings.parallelism = positiveInput(s, Parallel, 16);
-        plan.settings.reuseFeatures =
-            SendMessageW(s.controls.at(ReuseFeatures), BM_GETCHECK, 0, 0) == BST_CHECKED;
+        plan.settings.reuseFeatures = false;
         savePlan(plan, file);
         s.status = L"전체 " + std::to_wstring(plan.pairs.size()) +
                    L"쌍의 파일 경로와 순서를 저장했습니다: " + file;
@@ -1483,7 +1531,13 @@ void command(AppState &s, int id, int code)
         }
     }
     else if (id == RunStop)
+    {
+        const bool starting = !s.running;
         startOrStop(s);
+        if (starting && s.running)
+            s.page = 2;
+        layout(s);
+    }
     else if (id == BrowseDb)
     {
         auto initial = s.database.empty() ? s.root / L"data/fvc" : s.database;
@@ -1594,9 +1648,9 @@ void createControls(AppState &s)
     addButton(s, SummaryCharts, L"그래프");
     addButton(s, SaveReport, L"보고서 저장  ↓");
     addButton(s, NavSummary, L"05  평가 요약");
-    add(s, ReuseFeatures, L"BUTTON", L"테스트 지문 특징 재사용 (속도 개선)",
-        WS_TABSTOP | BS_AUTOCHECKBOX);
-    SendMessageW(s.controls.at(ReuseFeatures), BM_SETCHECK, BST_CHECKED, 0);
+
+    addButton(s, PreviousStep, L"← 이전 단계");
+    addButton(s, NextStep, L"다음 단계  →");
     addButton(s, NextPage, L"현재 목록으로 이동  →");
     HWND list = add(s, PairTable, WC_LISTVIEWW, L"비교 목록",
                     WS_TABSTOP | LVS_REPORT | LVS_OWNERDATA | LVS_SINGLESEL | LVS_SHOWSELALWAYS, 0);
@@ -1848,7 +1902,7 @@ int runComparisonWindow(HINSTANCE instance, int showCommand)
     AppState state;
     RECT work{};
     SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
-    RECT bounds{0, 0, 1280, 830};
+    RECT bounds{0, 0, 1280, 884};
     constexpr DWORD style = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
     AdjustWindowRect(&bounds, style, FALSE);
     int w = (std::min)(bounds.right - bounds.left, work.right - work.left),
