@@ -14,6 +14,15 @@ cmake --preset vs2022-ui-only
 cmake --build --preset vs2022-ui-release
 ```
 
+Visual Studio에서 F5로 실행할 때는 저장소 루트 폴더를 열고 다음을 설정합니다.
+
+1. 상단 구성을 `vs2022-ui-release`로 선택하고 CMake 생성 완료를 기다립니다.
+2. 상단 **시작 항목 선택**에서 `fingerprint_compare.exe (Release\fingerprint_compare.exe)`를 선택합니다. `(설치)` 항목은 선택하지 않습니다.
+3. 시작 항목이 보이지 않으면 솔루션 탐색기의 **솔루션과 사용 가능한 보기 간 전환 → CMake 대상 뷰**로 전환합니다.
+4. **F5**를 누르면 Visual Studio가 UI를 빌드하고 디버깅을 시작합니다.
+
+시작 항목 선택은 PC별 Visual Studio 설정입니다. 새로 클론한 팀원도 처음 한 번 설정해야 합니다.
+
 출력은 `build/vs2022-ui/Release/fingerprint_compare.exe`입니다. 앱 화면은 DLL이 없어도 열립니다.
 평가 시 알고리즘 팀에서 받은 x64 DLL과 필요한 모델·런타임을 준비하고 앱에서 DLL과 DB를 선택합니다.
 DeepPrint의 공통 모델·런타임은 선택 DLL 폴더 또는 실행 파일 폴더에 두면 됩니다.
