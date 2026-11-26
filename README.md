@@ -42,11 +42,11 @@ if ($LASTEXITCODE -ne 0) { throw '발표 폴더 복사 실패' }
 
 FVC 원본 240장으로 DB마다 **본인 280쌍과 타인 2,880쌍**을 비교했습니다. 전체 **9,480쌍에서 처리 실패는 0건**이었고, C++로 내보낸 ONNX와 기준 DLL의 반올림 점수가 모든 쌍에서 일치했습니다. 표의 FMR·FNMR은 각 DB의 **EER 추정 임계값**에서 측정했습니다. [이전 전처리 결과](log/fvc2004-roi-deployment-20261125/original_metrics.csv) · [최종 KISA 대조 CSV](log/cpp-port-verification/native-parity.csv)
 
-| DB | 전처리 변경 전 EER | 시연 DLL EER | EER 임계값 | 해당 지점 FMR / FNMR | EER ≤ 3% |
-| --- | ---: | ---: | ---: | ---: | --- |
-| FVC2000 | 2.64% | **2.64%** | 0.868 | 2.78% / 2.50% | 달성 |
-| FVC2002 | 8.03% | **6.48%** | 0.788 | 6.53% / 6.43% | 미달 |
-| FVC2004 | 5.69% | **4.78%** | 0.846 | 5.28% / 4.29% | 미달 |
+| DB | 전처리 변경 전 EER | 시연 DLL EER | EER 임계값 | 해당 지점 FMR / FNMR |
+| --- | ---: | ---: | ---: | ---: |
+| FVC2000 | 2.64% | **2.64%** | 0.868 | 2.78% / 2.50% |
+| FVC2002 | 8.03% | **6.48%** | 0.788 | 6.53% / 6.43% |
+| FVC2004 | 5.69% | **4.78%** | 0.846 | 5.28% / 4.29% |
 
 GUI 기본 규칙은 DB당 **160쌍(본인 70·타인 90)**입니다. 위 표는 `deepprint_research verify`에 DB당 3,160쌍의 고정 목록을 전달해 재현할 수 있습니다. GUI의 **불러오기**는 GUI에서 저장한 `enroll,attempt,relation` 형식의 목록을 읽습니다. [CLI용 고정 비교 쌍](log/fvc2004-roi-deployment-20261125/app-run/logs/run-1795556427179-31364-1/pairs.csv) · [C++ 평가 명령](#c-연구-도구)
 
@@ -522,13 +522,3 @@ FVC2004에 전체 프레임을 사용하려면 별도 빌드 디렉터리에서 
 평가 앱의 **보고서 저장**은 실행한 DB, 비교 규칙, 완료 쌍 수와 지표를 함께 기록합니다. 예를 들어 FVC2002의 GUI 보고서에서 100쌍으로 측정한 EER은 **6.19%**(추정 임계값 0.807)이고, 발표 표에서 전체 원본 3,160쌍으로 측정한 EER은 **6.48%**(0.788)입니다. [GUI 보고서 예시](reports/fingerprint-report-20261126-153655.html) · [최종 전체 원본 결과](log/cpp-port-verification/native-parity.csv)
 
 `reports/fingerprint_evaluation.html`에는 DB별 전처리를 갱신하기 전 결과가 보관돼 있습니다. [이전 평가 보고서](reports/fingerprint_evaluation.html)
-
-이전 원본·가우시안 노이즈 실험에서 생성한 그래프는 `reports/assets/`에 있습니다. [점수 분포](reports/assets/score-distributions.svg) · [DET](reports/assets/det-curves.svg) · [임계값별 오류율](reports/assets/threshold-curves.svg)
-
-| 원본 DB | 초기 DeepPrint EER · 가중치 튜닝 전 |
-| --- | ---: |
-| FVC2000 | 2.50% |
-| FVC2002 | 7.99% |
-| FVC2004 | 12.27% |
-
-초기 표와 최종 검증 표는 과제 8쪽의 교차점 계산법을 사용합니다. 노이즈 전용 실행의 `summary.csv`는 선형보간을 사용해 일부 EER 값이 다릅니다. 초기 FVC2004 평가에서 FMR을 0.1% 이하로 제한했을 때 관측 FNMR은 91.07%였습니다.

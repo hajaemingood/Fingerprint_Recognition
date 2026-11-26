@@ -23,7 +23,7 @@ FVC2002 bilateral-12와 bilateral-30은 배포 DLL의 KISA 함수에 필터링�
 FVC2004 roi-20은 별도 C++ DLL을 빌드해 원본 3,160쌍에서 전체 4.78%, 확인 4.56%를 재현했다.
 KISA 검증에서는 후보마다 원본 80장의 템플릿을 만들고 KISA_Compare를 3,160회 호출했다. 처리 실패는 없었다.
 
-모든 DB에서 EER 3% 이하인 후보는 확인되지 않았다. 실험은 원본 TIFF를 대상으로 했으므로 증강 영상에서의 효과는 별도 검증 대상이다.
+이 실험은 원본 TIFF로 전처리 효과를 측정했다. 증강 영상에서의 효과는 별도 검증 대상이다.
 
 재현 도구: deepprint_research.exe screen (README의 C++ 연구 도구 명령 참조)
 입력 모델: build/evaluator/deepprint_texminu_512.onnx

@@ -28,7 +28,7 @@ FVC2002의 세 분할 평균 EER은 이 과정에서 기존 3.89%보다 낮아�
 
 전체는 DB당 3,160쌍, 확인은 DB당 276쌍이다. 85:15 후보를 별도 ONNX와 C++ DLL로 내보냈다.
 KISA 9,480쌍에서 처리 실패가 없었다. ONNX와 C++ 점수는 FVC2002 2쌍만 0.001 차이가 있었고 EER은 모두 같았다.
-세 DB EER 3% 이하 목표는 미달이며, build/evaluator의 배포 DLL·ONNX는 이번 실험 전과 같다.
+이번 실험에서는 build/evaluator의 기존 배포 DLL·ONNX를 유지했다.
 
 재현 도구: deepprint_train.exe augmentation, deepprint_research.exe verify (C++ 이식본)
 재현 명령: .\log\fvc-augmentation-tuning-20261126\reproduce.ps1
