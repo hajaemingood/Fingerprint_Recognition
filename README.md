@@ -2,13 +2,24 @@
 
 고급 객체지향 프로그래밍(SME3007) 팀 프로젝트입니다. Windows용 C++17 DLL은 지문 템플릿을 만들고 정합 점수를 반환합니다. 평가 GUI는 FVC 영상으로 DLL을 실행해 인식 성능과 처리 성능을 측정하고 보고서를 생성합니다.
 
-체크포인트 변환, 연구용 전처리·미세조정, KISA DLL, 평가 GUI와 보고서 생성의 구현 언어는 **C++17**입니다. 모델 변환 도구는 공개 체크포인트를 직접 읽고, 학습 도구는 네이티브 LibTorch CPU로 역전파하며, 배포 DLL은 ONNX Runtime CPU로 추론합니다. [C++ 연구 도구](#c-연구-도구)
+체크포인트 변환, 전처리·미세조정, KISA DLL, 평가 GUI와 보고서 생성은 **C++17**로 구현했습니다. 발표용 DLL은 사전학습 DeepPrint를 ONNX Runtime CPU로 실행하고, 연구용 학습기는 네이티브 LibTorch CPU로 가중치를 갱신합니다. 함수 호출도, ONNX 레이어 형상, 정합식과 학습 손실은 [알고리즘 기술 문서](src/README.md)에 있습니다.
 
 ## 최종 시연 구성
 
-현재 PC에서 C++ 변환기로 만든 모델까지 시연하려면 아래 명령을 실행하고 **알고리즘 DLL 선택…**에서 실행 파일과 같은 폴더의 `IndustryAlgorithm.dll`을 지정합니다. `build/evaluator/`에는 비교에 사용한 기존 모델과 평가 앱이 있습니다.
+현재 `progess`의 발표용 패키지는 `build/cpp-validation/presentation/`에 있습니다. 이 PC에서 저장소 루트의 PowerShell로 실행한 뒤 **01 실험 설정 → 알고리즘 DLL 선택…**에서 같은 폴더의 `IndustryAlgorithm.dll`을 지정합니다.
 
 ```powershell
+.\build\cpp-validation\presentation\fingerprint_compare.exe
+```
+
+코드를 수정한 뒤에는 아래 명령으로 DLL과 GUI를 다시 빌드해 발표 폴더에 반영합니다. 이 명령은 이 PC에 구성된 `build/cpp-validation`의 CMake 캐시를 사용합니다. 설치할 파일을 사용 중이면 발표용 GUI를 먼저 닫습니다. 새 클론에서는 [DeepPrint 최초 빌드 준비](#deepprint-최초-빌드-준비)부터 진행합니다.
+
+```powershell
+$cmake = '.\build\dependencies\cmake\bin\cmake.exe'
+& $cmake --build build/cpp-validation --target IndustryAlgorithm fingerprint_compare --parallel 4
+if ($LASTEXITCODE -ne 0) { throw 'DLL 또는 GUI 빌드 실패' }
+& $cmake --install build/cpp-validation --prefix build/cpp-validation/presentation
+if ($LASTEXITCODE -ne 0) { throw '발표 폴더 복사 실패' }
 .\build\cpp-validation\presentation\fingerprint_compare.exe
 ```
 
@@ -24,24 +35,33 @@
 ### 모델에서 평가까지
 
 1. C++ 변환기로 사전학습 DeepPrint 체크포인트를 ONNX로 내보내고, 독립 기준 벡터와 KISA 점수로 추론 결과를 검증합니다.
-2. DLL은 FVC2002 영상에 `3×3` 양방향 필터(밝기 차이 σ=12)를, FVC2004 영상에는 전경 ROI와 각 방향 `20%` 여백을 적용합니다. 전처리한 입력에서 512차원 템플릿을 만들고, 두 템플릿의 질감·특징점 유사도를 `22:78`로 결합합니다.
-3. GUI는 같은 손가락과 다른 손가락의 영상 쌍에 KISA 함수를 호출합니다. 반환 점수로 인식 오류율을 계산하고, 실행 시간과 처리 실패를 함께 기록합니다.
+2. DLL은 FVC2000의 전체 영상, FVC2002의 `3×3` 양방향 필터 적용 영상(밝기 차이 σ=12), FVC2004의 전경 ROI(각 방향 여백 20%)를 흰색으로 패딩해 299×299로 맞춥니다. 공통 CNN에서 질감·특징점 분기로 나뉘고, 각각의 256차원 벡터가 512차원 템플릿이 됩니다. [전처리와 모델 구조](src/README.md#4-deepprint-model-architecture)
+3. GUI가 `KISA_Enroll`과 `KISA_Attempt`로 두 템플릿을 얻으면 `KISA_Compare`가 분기별 코사인 점수를 각각 0~1로 변환하고 질감·특징점 비율 **22:78**로 합산합니다. GUI는 DLL이 소수점 셋째 자리로 반환한 점수에 판정 기준을 적용하고 오류율, 시간, 실패를 기록합니다. [정합 점수 계산](src/README.md#7-fingerprint-matching)
 
 ### 최종 DLL 검증 결과
 
-FVC 원본 DB마다 **본인 280쌍과 타인 2,880쌍**을 고정 목록으로 평가했습니다. 총 **9,480쌍**에서 처리 실패는 **0건**이었습니다. 표의 FMR·FNMR은 DB별 **EER 지점**에서 측정한 값입니다.
+FVC 원본 240장으로 DB마다 **본인 280쌍과 타인 2,880쌍**을 비교했습니다. 전체 **9,480쌍에서 처리 실패는 0건**이었고, C++로 내보낸 ONNX와 기준 DLL의 반올림 점수가 모든 쌍에서 일치했습니다. 표의 FMR·FNMR은 각 DB의 **EER 추정 임계값**에서 측정했습니다. [이전 전처리 결과](log/fvc2004-roi-deployment-20261125/original_metrics.csv) · [최종 KISA 대조 CSV](log/cpp-port-verification/native-parity.csv)
 
-| DB | 전처리 변경 전 EER | 최종 EER | EER 임계값 | 해당 지점 FMR / FNMR |
+| DB | 전처리 변경 전 EER | 시연 DLL EER | EER 임계값 | 해당 지점 FMR / FNMR | EER ≤ 3% |
+| --- | ---: | ---: | ---: | ---: | --- |
+| FVC2000 | 2.64% | **2.64%** | 0.868 | 2.78% / 2.50% | 달성 |
+| FVC2002 | 8.03% | **6.48%** | 0.788 | 6.53% / 6.43% | 미달 |
+| FVC2004 | 5.69% | **4.78%** | 0.846 | 5.28% / 4.29% | 미달 |
+
+GUI 기본 규칙은 DB당 **160쌍(본인 70·타인 90)**입니다. 위 표는 `deepprint_research verify`에 DB당 3,160쌍의 고정 목록을 전달해 재현할 수 있습니다. GUI의 **불러오기**는 GUI에서 저장한 `enroll,attempt,relation` 형식의 목록을 읽습니다. [CLI용 고정 비교 쌍](log/fvc2004-roi-deployment-20261125/app-run/logs/run-1795556427179-31364-1/pairs.csv) · [C++ 평가 명령](#c-연구-도구)
+
+### 미세조정 후보와 시연 모델의 차이
+
+C++에서 A(두 투영층), B(질감 마지막 Inception C와 투영층), C(특징점 마지막 Conv와 투영층)를 각각 12스텝 학습했습니다. DB마다 손가락 ID를 **학습 4개·검증 3개·최종 확인 3개**로 나눴습니다. 검증에서 선택된 조합은 **A의 4스텝 체크포인트, 질감·특징점 0:100**입니다. 아래 수치는 모두 같은 세 DB에서 측정한 EER입니다. [분할 목록](log/fvc-branch-tuning-20261126/split.csv) · [후보 선택](log/cpp-port-verification/branch-selection.csv) · [후보 KISA 결과](log/cpp-port-verification/branch-kisa-parity.csv)
+
+| 모델과 평가 범위 | DB당 비교 수 | FVC2000 | FVC2002 | FVC2004 |
 | --- | ---: | ---: | ---: | ---: |
-| FVC2000 | 2.64% | **2.64%** | 0.868 | 2.78% / 2.50% |
-| FVC2002 | 8.03% | **6.48%** | 0.788 | 6.53% / 6.43% |
-| FVC2004 | 5.69% | **4.78%** | 0.846 | 5.28% / 4.29% |
+| 시연 모델 22:78 · 전체 원본 | 3,160쌍 | 2.64% | 6.48% | 4.78% |
+| 후보 A 0:100 · 전체 원본 | 3,160쌍 | 3.66% | 6.30% | 5.65% |
+| 시연 모델 22:78 · 보류 ID만 | 276쌍 | 1.38% | 11.68% | 4.72% |
+| 후보 A 0:100 · 보류 ID만 | 276쌍 | 2.23% | 11.94% | 1.64% |
 
-전처리로 FVC2002와 FVC2004의 전체 EER을 낮췄습니다. 세 DB 모두 3% 이하라는 목표는 미달했으며, 투영층 미세조정·증강·정합 비율 실험은 최종 확인 ID에서 일관된 개선을 보이지 않아 시연 DLL에는 전처리 개선안을 채택했습니다. [최종 DLL KISA 검증](log/fvc-branch-tuning-20261126/native-baseline.csv) · [전처리 및 정렬 실험](log/fvc-input-alignment-screen-20261126/conclusion.txt) · [미세조정 및 증강 실험](log/fvc-augmentation-tuning-20261126/conclusion.txt)
-
-**라이브 시연**은 DB 하나를 선택하고 기본 규칙의 **160쌍(본인 70·타인 90)**으로 진행할 수 있습니다. 화면의 지표는 그 실행의 비교 목록에 대한 결과입니다. 발표 자료에 쓰는 위 표의 수치는 DB당 3,160쌍을 평가한 기록입니다.
-
-C++ 변환기로 생성한 ONNX와 기준 DLL을 대조했을 때 9,480쌍 모두 소수점 셋째 자리 정합 점수가 일치했습니다. C++로 다시 학습한 A·B·C 중 검증셋에서 선택된 후보의 전체 EER은 각각 3.66%, 6.30%, 5.65%였고, 시연 모델에는 사전학습 가중치와 질감·특징점 비율 22:78을 적용했습니다. [원본 쌍별 점수 대조 요약](log/cpp-port-verification/native-parity.csv) · [후보 및 비율 선택](log/cpp-port-verification/branch-selection.csv) · [후보의 LibTorch·ONNX 대조](log/cpp-port-verification/branch-export-parity.csv) · [후보의 KISA 검증](log/cpp-port-verification/branch-kisa-parity.csv)
+전체 원본에서 후보 A는 FVC2002의 EER을 낮췄지만 FVC2000·FVC2004에서는 오류가 늘었습니다. 보류 ID에서도 세 DB에 일관된 개선이 없어 시연에는 **사전학습 모델과 22:78**을 채택했습니다. 별도의 증강 실험은 원본과 변형을 섞어 학습하고 원본으로 최종 확인했습니다. [학습과 비율 변경을 분리한 4조건 비교](src/README.md#12-experimental-results-and-limitations) · [증강 실험 기록](log/fvc-augmentation-tuning-20261126/conclusion.txt)
 
 ## 새 PC에서 처음부터 실행 (Visual Studio 2022·2026 공통)
 
@@ -134,8 +154,8 @@ Git에 포함되어 있지 않으므로 아래 최초 빌드 준비 절차를 �
 
 ### 지표 읽기
 
-- **FMR**은 타인 비교를 본인으로 받아들인 비율, **FNMR**은 본인 비교를 거부한 비율입니다. 점수가 현재 판정 기준 이상이면 같은 지문으로 판정합니다. 기본 슬라이더 값은 `0.850`입니다.
-- **EER**은 FMR과 FNMR이 같아지는 지점의 오류율입니다. 정확한 교차점이 없으면 인접 임계값에서 추정합니다. **EER\***은 성공한 비교의 점수만 사용합니다. 슬라이더는 개별 판정과 현재 FMR·FNMR에 사용되고, EER 탐색은 별도로 수행됩니다.
+- **FMR**은 타인 비교를 본인으로 받아들인 비율, **FNMR**은 본인 비교를 거부한 비율이며 GUI의 기본 집계에는 본인 비교의 처리 실패도 포함합니다. 앱 시작 시 개별 판정 임계값은 **0.850**입니다. 본인·타인 쌍 모두 같은 임계값을 적용하며 점수가 정확히 0.850이면 수락합니다.
+- **EER**은 FMR과 FNMR이 같아지는 지점의 오류율입니다. GUI는 완료된 쌍의 관측 점수들을 임계값으로 살펴봅니다. 정확히 같아지는 지점이 없으면 교차 전후 두 점 중 평균 오류율이 낮은 쪽을 선택합니다. 슬라이더를 움직이면 개별 판정과 현재 FMR·FNMR이 바뀌고, 동일한 비교 목록과 점수의 EER은 유지됩니다. **EER\***은 성공한 비교만 집계합니다. [GUI 지표 계산](app/fingerprint_image.cpp)
 - **FMR100 / FMR1000**은 FMR이 각각 `1% / 0.1%` 이하일 때 가장 낮은 FNMR입니다. **ZeroFMR**은 FMR이 0일 때 가장 낮은 FNMR, **ZeroFNMR**은 FNMR이 0일 때 가장 낮은 FMR입니다.
 - **FTE**는 등록 단계의 실패율입니다. **REJgenuine / REJimpostor**는 실제 본인·타인 매칭 시도에서의 실패율입니다. 상세 지표의 `KISA_Compare` 시간은 특징 추출 시간을 제외하며, RAM은 앱·모델·캐시 전체의 Working Set 관측값입니다.
 
@@ -195,6 +215,7 @@ Advanced_OOP/
 │   ├── kisa_api.h                    # KISA 공개 함수와 버퍼 규약
 │   └── image_format.h                # iType별 입력 영상 크기
 ├── src/
+│   ├── README.md                     # 알고리즘, 호출 관계, 학습 및 검증 결과
 │   ├── api/kisa_api.cpp              # DLL 진입점과 오류 처리
 │   ├── feature/
 │   │   ├── feature_extractor.h       # 특징 추출 인터페이스
@@ -209,7 +230,7 @@ Advanced_OOP/
 │   ├── comparison_window.{h,cpp}     # 다섯 페이지 UI, 비교 실행·중지, 보고서 저장
 │   └── fingerprint_image.{h,cpp}     # TIFF 읽기, DLL 로드, 비교 목록·지표 계산
 ├── tools/
-│   ├── deepprint/                   # ONNX 변환, 기준 벡터 생성, 전처리·미세조정 실험
+│   ├── deepprint/                   # C++ ONNX 변환기, 전처리·미세조정·검증 도구
 │   ├── fvc/
 │   │   ├── fvc_dataset.{h,cpp}       # FVC 파일 목록과 증강 매니페스트
 │   │   └── tiff_image.{h,cpp}        # TIFF 입출력
@@ -223,6 +244,8 @@ Advanced_OOP/
 │       ├── noise_evaluation.cpp      # evaluate_noise 실행 진입점
 │       └── weight_tuning.cpp         # 저장 템플릿 기반 정합 가중치 실험
 ├── tests/
+│   ├── fixtures/deepprint/           # 전처리 및 추론 결과를 대조하는 독립 기준 벡터
+│   ├── test_research.cpp             # 연구 지표와 ONNX 직렬화 테스트
 │   ├── evaluation_fixture.cpp        # upstream 워커 UI용 (이 브랜치에서는 빌드하지 않음)
 │   ├── test_evaluation.cpp           # upstream 워커 UI용 (이 브랜치에서는 빌드하지 않음)
 │   ├── test_deepprint.cpp            # DeepPrint 기준 벡터 비교
@@ -259,13 +282,13 @@ Advanced_OOP/
 
 ## 구형 빌드와 평가 기록
 
-현재 앱과 DeepPrint DLL은 `build/evaluator/`를 기준으로 실행합니다. 로컬의 이전 검증 빌드는 `build/_archive/`, 교체 전 DLL은 `build/rollback/`에서 찾을 수 있습니다. 최종 성능과 실험의 CSV는 `log/`에 있습니다. `build/`의 실행 파일·모델·런타임은 Git에서 제외합니다.
+발표용 실행 파일과 DLL은 `build/cpp-validation/presentation/`에 함께 있습니다. `build/evaluator/`는 VS Code 기본 빌드 및 기존 기준 모델을 사용한 비교 실험 경로입니다. 로컬의 이전 빌드는 `build/_archive/`에, 교체 전 DLL은 `build/rollback/`에 보관합니다. `build/`는 Git에서 제외하며 최종 수치와 비교 조건은 저장소에서 확인할 수 있습니다. [최종 검증 CSV](log/cpp-port-verification/) · [전체 실험 기록](log/)
 
 구형 히스토그램 DLL과 평가 기록의 위치·해시는 보관 로그에 기록되어 있습니다. [보관 로그](archive/archive-log.csv)
 
 ## FVC 데이터
 
-`data/fvc/`에는 평가에 사용하는 원본 TIFF 240장이 있습니다. 원본 ZIP은 `reference/프로젝트 관련 자료/`에 있습니다.
+`data/fvc/`에는 DB별 손가락 10개를 각각 8번 촬영한 원본 TIFF가 총 **240장** 있습니다. 기본 강건성 실험은 이 240장에 노이즈·회전·밝기 변형을 각각 적용해 **증강본 2,880장**을 생성합니다. 위 최종 DLL 표는 원본 영상끼리 비교한 결과입니다. [강건성 평가 조건](#회전밝기를-포함한-강건성-평가)
 
 | 폴더 | `iType` | 영상 크기 | 파일 수 |
 | --- | --- | --- | --- |
@@ -308,7 +331,7 @@ $cmake = if ($installedCmake) { $installedCmake.Source } else {
 & $cmake --build build/evaluator --parallel 4
 ```
 
-빌드 산출물은 `build/evaluator/`에 생성됩니다.
+이 VS Code·MinGW 구성의 산출물은 `build/evaluator/`에 생성됩니다. 발표용 폴더를 갱신할 때는 [최종 시연 구성](#최종-시연-구성)의 `build/cpp-validation` 빌드·설치 명령을 사용합니다.
 
 | 산출물 | 역할 |
 | --- | --- |
@@ -345,7 +368,11 @@ DeepPrint DLL을 복사할 때는 ONNX 모델과 런타임 DLL도 DeepPrint DLL 
 
 Visual Studio 프리셋으로 빌드했다면 `ctest --preset deepprint-release`를 실행합니다.
 
-`noise_and_metrics`는 증강과 평가 지표를 검사합니다. `deepprint_reference`는 `tests/fixtures/deepprint/`의 기준 벡터를 사용해 DeepPrint의 C++ 추론 결과를 대조합니다.
+`noise_and_metrics`는 증강과 평가 지표를 검사하고, `deepprint_reference`는 독립 기준 벡터와 C++ 추론 결과를 대조합니다. 연구 도구를 켜면 `research_metrics_and_onnx`도 등록됩니다. 현재 발표용 빌드 구성에서 세 검사를 실행하려면 아래 명령을 사용합니다.
+
+```powershell
+.\build\dependencies\cmake\bin\ctest.exe --test-dir build/cpp-validation --output-on-failure
+```
 
 ## DeepPrint DLL과 노이즈 평가
 
@@ -370,7 +397,7 @@ cmake --build build/cpp-research --target export_deepprint deepprint_research
 새 클론에서 위 모델로 시연용 네 파일을 묶으려면 같은 터미널에서 실행합니다.
 
 ```powershell
-cmake -S . -B build/cpp-validation -G Ninja -DCMAKE_BUILD_TYPE=Release -DFINGERPRINT_DEEPPRINT=ON -DFINGERPRINT_BUILD_GUI=ON '-DFINGERPRINT_TEXTURE_WEIGHT:STRING=0.22' -DFINGERPRINT_DEEPPRINT_REFERENCE_DIR=tests/fixtures/deepprint
+cmake -S . -B build/cpp-validation -G Ninja -DCMAKE_BUILD_TYPE=Release -DFINGERPRINT_DEEPPRINT=ON -DFINGERPRINT_BUILD_GUI=ON -DFINGERPRINT_BUILD_RESEARCH=ON -DFINGERPRINT_FVC2004_ROI=ON '-DFINGERPRINT_TEXTURE_WEIGHT:STRING=0.22' -DFINGERPRINT_DEEPPRINT_REFERENCE_DIR=tests/fixtures/deepprint
 cmake --build build/cpp-validation
 ctest --test-dir build/cpp-validation --output-on-failure
 cmake --install build/cpp-validation --prefix build/cpp-validation/presentation
@@ -389,8 +416,8 @@ cmake -S . -B build/cpp-research "-DFINGERPRINT_TORCH_NATIVE_DIR=$native"
 cmake --build build/cpp-research --target deepprint_train deepprint_research
 $research = '.\build\cpp-research\deepprint_research.exe'
 $train = '.\build\cpp-research\deepprint_train.exe'
-$model = 'build/evaluator/deepprint_texminu_512.onnx'
-$dll = 'build/evaluator/IndustryAlgorithm.dll'
+$model = 'build/cpp-validation/presentation/deepprint_texminu_512.onnx'
+$dll = 'build/cpp-validation/presentation/IndustryAlgorithm.dll'
 $pairs = 'log/fvc2004-roi-deployment-20261125/app-run/logs/run-1795556427179-31364-1/pairs.csv'
 $idSplit = 'log/finetune-noise40-20261124-175440/split.csv'
 $captureSplit = 'log/finetune-last-id-sigma30-mean-20261125-053138/split.csv'
@@ -409,7 +436,7 @@ $screenSplit = 'log/weight-tuning-20261124-164133/dll-verification/split.csv'
 & $train augmentation $model data/fvc $pairs log/fvc-augmentation-tuning-20261126/folds.csv build/cpp-results/augmentation
 ```
 
-학습부터 실험용 DLL 빌드, KISA 대조까지 한 번에 실행하려면 저장소 루트에서 `cmake -DSTUDY=branches -P tools/deepprint/replay.cmake` 또는 `cmake -DSTUDY=augmentation -P tools/deepprint/replay.cmake`를 사용합니다. 이미 학습한 경로는 `-DVERIFY_ONLY=ON -DOUTPUT=<결과 폴더>`로 지정합니다.
+기존 기준 모델(`build/evaluator/deepprint_texminu_512.onnx`)로 학습부터 실험용 DLL 빌드, KISA 대조까지 한 번에 실행하려면 저장소 루트에서 `cmake -DSTUDY=branches -P tools/deepprint/replay.cmake` 또는 `cmake -DSTUDY=augmentation -P tools/deepprint/replay.cmake`를 사용합니다. 이미 학습한 경로는 `-DVERIFY_ONLY=ON -DOUTPUT=<결과 폴더>`로 지정합니다.
 
 각 결과 폴더의 `selection.csv`에서 질감 비중을 읽습니다. 실험용 DLL을 새 빌드 폴더에서 `-DFINGERPRINT_TEXTURE_WEIGHT=<선택한 비중>`, `-DFINGERPRINT_DEEPPRINT_MODEL=<후보 ONNX 절대 경로>`로 빌드한 뒤 `deepprint_research verify`의 마지막 인수에도 같은 비중을 지정합니다.
 
@@ -492,7 +519,9 @@ FVC2004에 전체 프레임을 사용하려면 별도 빌드 디렉터리에서 
 
 ## 평가 보고서
 
-평가 앱의 **보고서 저장**은 결과를 사용자가 지정한 경로에 내보냅니다. 저장소의 `reports/fingerprint_evaluation.html`은 이전 실행에서 보관한 보고서입니다. [이전 평가 보고서](reports/fingerprint_evaluation.html)
+평가 앱의 **보고서 저장**은 실행한 DB, 비교 규칙, 완료 쌍 수와 지표를 함께 기록합니다. 예를 들어 FVC2002의 GUI 보고서에서 100쌍으로 측정한 EER은 **6.19%**(추정 임계값 0.807)이고, 발표 표에서 전체 원본 3,160쌍으로 측정한 EER은 **6.48%**(0.788)입니다. [GUI 보고서 예시](reports/fingerprint-report-20261126-153655.html) · [최종 전체 원본 결과](log/cpp-port-verification/native-parity.csv)
+
+`reports/fingerprint_evaluation.html`에는 DB별 전처리를 갱신하기 전 결과가 보관돼 있습니다. [이전 평가 보고서](reports/fingerprint_evaluation.html)
 
 이전 원본·가우시안 노이즈 실험에서 생성한 그래프는 `reports/assets/`에 있습니다. [점수 분포](reports/assets/score-distributions.svg) · [DET](reports/assets/det-curves.svg) · [임계값별 오류율](reports/assets/threshold-curves.svg)
 
