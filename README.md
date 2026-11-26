@@ -23,14 +23,18 @@ if ($LASTEXITCODE -ne 0) { throw '발표 폴더 복사 실패' }
 .\build\cpp-validation\presentation\fingerprint_compare.exe
 ```
 
-다른 Windows x64 PC에서 실행할 때는 아래 네 파일을 같은 폴더에 두고, 평가할 DB 폴더도 준비합니다.
+**다른 Windows x64 KISA 평가 시스템에 전달할 파일은 두 개입니다.** 다음 명령으로 `build/cpp-validation/algorithm/`에 내보낸 뒤 두 DLL을 같은 폴더에 둡니다. 상대 평가 시스템에서 `IndustryAlgorithm.dll`을 선택합니다.
+
+```powershell
+& $cmake --install build/cpp-validation --component KisaAlgorithm --prefix build/cpp-validation/algorithm
+```
 
 | 파일 | 역할 |
 | --- | --- |
-| `fingerprint_compare.exe` | 실험 설정, DLL 실행, 지표 계산과 보고서 저장 |
-| `IndustryAlgorithm.dll` | KISA C ABI를 구현한 DeepPrint 지문 비교 DLL |
-| `deepprint_texminu_512.onnx` | 질감 256차원과 특징점 256차원 임베딩을 추출하는 모델 |
+| `IndustryAlgorithm.dll` | KISA C ABI와 DeepPrint ONNX 모델(그래프·학습 가중치)을 포함한 지문 비교 DLL |
 | `onnxruntime.dll` | Windows x64 CPU 추론 런타임 |
+
+우리 GUI로 시연할 때는 `presentation/`에 함께 설치된 `fingerprint_compare.exe`를 실행하고 평가할 DB를 선택합니다. 모델을 갱신할 때는 새 ONNX를 `FINGERPRINT_DEEPPRINT_MODEL`로 지정해 DLL을 다시 빌드하고 설치합니다.
 
 ### 모델에서 평가까지
 
@@ -86,11 +90,11 @@ C++에서 A(두 투영층), B(질감 마지막 Inception C와 투영층), C(특�
    ```
 
 3. **실행** — `build/deepprint-release/`에 `fingerprint_compare.exe`, `IndustryAlgorithm.dll`,
-   `deepprint_texminu_512.onnx`, `onnxruntime.dll`이 함께 생성됩니다. 앱을 실행하고 **알고리즘 DLL 선택**에서
+   `onnxruntime.dll`이 함께 생성됩니다. 앱을 실행하고 **알고리즘 DLL 선택**에서
    같은 폴더의 `IndustryAlgorithm.dll`을 선택합니다.
 
 UI만 수정할 때는 `ui-release`(또는 `ui-debug`)를 선택합니다. 출력은 `build/ui-release/fingerprint_compare.exe`이며,
-이후 받은 DLL만 교체하는 경우 `onnxruntime.dll`과 `deepprint_texminu_512.onnx`를 실행 파일 폴더에 한 번 두면 재사용됩니다.
+이후 알고리즘을 교체할 때는 전달받은 두 DLL을 같은 폴더에 두고 새 `IndustryAlgorithm.dll`을 선택합니다.
 MSYS2 MinGW g++ 환경에서는 `ui-release-mingw`를 사용하며 `g++`, `mingw32-make`가 PATH에 있어야 합니다.
 
 | 프리셋 | 컴파일러 | 빌드 대상 | 출력 폴더 |
@@ -126,7 +130,7 @@ Visual Studio에서 F5로 실행할 때는 저장소 루트 폴더를 열고 다
 
 출력은 `build/vs2022-ui/Release/fingerprint_compare.exe`입니다. 앱 화면은 DLL이 없어도 열립니다.
 평가 시 알고리즘 팀에서 받은 x64 DLL과 필요한 모델·런타임을 준비하고 앱에서 DLL과 DB를 선택합니다.
-DeepPrint의 공통 모델·런타임은 선택 DLL 폴더 또는 실행 파일 폴더에 두면 됩니다.
+현재 DeepPrint의 모델은 알고리즘 DLL에 내장되며, GUI는 선택 DLL 폴더 또는 실행 파일 폴더에서 런타임을 찾습니다.
 저장소의 `build/`, `dist/`, `.vs/`를 다른 PC의 빌드 캐시로 재사용하지 않습니다.
 배포 폴더를 옮겨 실행하는 것과 저장소를 새로 클론해 컴파일하는 것은 별도 절차입니다.
 
@@ -135,10 +139,8 @@ Visual Studio에서 `vs2022-debug`를 선택하고 시작 항목을 `fingerprint
 명령줄에서는 `cmake --preset vs2022-x64` 후 `cmake --build --preset vs2022-debug`를 실행합니다.
 출력 위치는 `build/vs2022-deepprint/Debug/`입니다.
 
-실행 폴더에는 `fingerprint_compare.exe`, `IndustryAlgorithm.dll`,
-`deepprint_texminu_512.onnx`, `onnxruntime.dll`이 함께 있어야 합니다.
-모델과 런타임은 `build/models/`, `build/dependencies/onnxruntime/`에 준비하고
-빌드 시 실행 폴더로 자동 복사합니다. 새 PC에서 저장소를 내려받을 경우 이 파일들은
+실행 폴더에는 `fingerprint_compare.exe`, `IndustryAlgorithm.dll`, `onnxruntime.dll`이 함께 있어야 합니다.
+빌드 시 `build/models/`의 ONNX를 알고리즘 DLL 리소스에 포함하고, `build/dependencies/onnxruntime/`의 런타임 DLL을 실행 폴더로 복사합니다. 새 PC에서 저장소를 내려받을 경우 이 파일들은
 Git에 포함되어 있지 않으므로 아래 최초 빌드 준비 절차를 먼저 수행해야 합니다.
 모델 기준 벡터는 `tests/fixtures/deepprint/`에 저장하고 CTest로 실제 C++ 추론과 대조합니다.
 
@@ -166,11 +168,9 @@ Git에 포함되어 있지 않으므로 아래 최초 빌드 준비 절차를 �
 앱에서 **DB 폴더**와 **알고리즘 DLL**을 직접 선택합니다. DLL은 x64이며 공통 KISA
 `KISA_Enroll`, `KISA_Attempt`, `KISA_Compare` C ABI와 `__cdecl` 호출 규약을 따라야 합니다.
 템플릿은 최대 1,000,000바이트의 불투명 데이터로 취급하며 정합 점수는 높을수록 유사한 0~1 값입니다.
-DLL의 종속 라이브러리와 모델은 선택한 DLL 폴더를 우선 사용합니다. DeepPrint의 경우
-`onnxruntime.dll`과 `deepprint_texminu_512.onnx`가 필요하며, 선택한 DLL 폴더에 없으면
-실행 파일 폴더의 공통 파일을 자동 재사용합니다. 앱은 임시 폴더에 DLL 버전별 실행용
-복사본을 준비하므로 다운로드 폴더 원본은 바꾸지 않습니다. 새로운 모델이나 런타임을
-요구하는 버전은 해당 파일도 함께 준비해야 합니다. 다른 KISA DLL은 자체 종속 파일 구성을 유지합니다.
+현재 DeepPrint DLL은 내장 모델을 메모리에서 읽고 같은 폴더의 `onnxruntime.dll`로 추론합니다.
+우리 GUI는 선택한 DLL 폴더에 런타임이 없으면 GUI 실행 폴더에서 찾아 임시 실행용 복사본을 준비합니다.
+외부 ONNX를 사용하는 이전 DeepPrint DLL을 선택할 때는 해당 버전의 `deepprint_texminu_512.onnx`도 준비합니다. 다른 KISA DLL은 각 알고리즘의 종속 파일 구성을 따릅니다.
 기존 배포 폴더에서 DLL만 직접 교체할 때는 앱을 종료한 뒤 교체하고 다시 실행합니다.
 처음에는 동시 비교 수 1로 실행하고 DLL의 병렬 호출 지원을 확인한 뒤 늘립니다.
 DB는 한 폴더의 `손가락번호_촬영번호.tif` 또는 `.tiff` 파일을 사용합니다.
@@ -336,12 +336,12 @@ $cmake = if ($installedCmake) { $installedCmake.Source } else {
 | 산출물 | 역할 |
 | --- | --- |
 | `fingerprint_compare.exe` | 다섯 페이지 평가 앱 |
-| `IndustryAlgorithm.dll` | DeepPrint의 KISA 함수 구현과 FVC2002·FVC2004 전처리 |
-| `deepprint_texminu_512.onnx`, `onnxruntime.dll` | DeepPrint 모델과 추론 런타임 |
+| `IndustryAlgorithm.dll` | 내장 DeepPrint 모델, KISA 함수 구현과 FVC2002·FVC2004 전처리 |
+| `onnxruntime.dll` | 내장 모델을 실행하는 CPU 추론 런타임 |
 | `augment_fvc.exe`, `evaluate_noise.exe` | 영상 증강과 명령줄 일괄 평가 |
 | `tune_weights.exe` | 저장된 DeepPrint 템플릿으로 질감·특징점 가중치 비교 |
 
-DeepPrint DLL을 복사할 때는 ONNX 모델과 런타임 DLL도 DeepPrint DLL 옆에 둡니다.
+외부 평가 시스템으로 복사할 때는 두 DLL을 함께 전달합니다.
 
 ### 평가 앱만 빌드
 
@@ -394,7 +394,7 @@ cmake --build build/cpp-research --target export_deepprint deepprint_research
 
 기존 모델을 보관한 PC에서는 변환기의 마지막 인수에 새 파일명을 지정하세요. DLL을 구성할 때 `FINGERPRINT_DEEPPRINT_MODEL`로 사용할 파일을 지정할 수 있습니다. MSYS2에서는 위의 Ninja 대신 DLL 빌드 예시의 MinGW 생성기·컴파일러를 사용합니다.
 
-새 클론에서 위 모델로 시연용 네 파일을 묶으려면 같은 터미널에서 실행합니다.
+새 클론에서 위 모델로 평가 GUI를 포함한 시연 패키지를 묶으려면 같은 터미널에서 실행합니다.
 
 ```powershell
 cmake -S . -B build/cpp-validation -G Ninja -DCMAKE_BUILD_TYPE=Release -DFINGERPRINT_DEEPPRINT=ON -DFINGERPRINT_BUILD_GUI=ON -DFINGERPRINT_BUILD_RESEARCH=ON -DFINGERPRINT_FVC2004_ROI=ON '-DFINGERPRINT_TEXTURE_WEIGHT:STRING=0.22' -DFINGERPRINT_DEEPPRINT_REFERENCE_DIR=tests/fixtures/deepprint
@@ -407,7 +407,7 @@ cmake --install build/cpp-validation --prefix build/cpp-validation/presentation
 
 ### C++ 연구 도구
 
-모델 변환·임베딩 캐시·전처리·ROI 비교는 위 연구 빌드로 실행합니다. 미세조정에는 LibTorch CPU 2.5.1과 TorchSharp 0.105.0의 네이티브 C 호출 인터페이스를 사용합니다. 아래 명령은 학습용 DLL을 준비한 뒤 `deepprint_train.exe` 옆에 복사합니다. 평가 GUI의 배포 구성은 네 파일입니다.
+모델 변환·임베딩 캐시·전처리·ROI 비교는 위 연구 빌드로 실행합니다. 미세조정에는 LibTorch CPU 2.5.1과 TorchSharp 0.105.0의 네이티브 C 호출 인터페이스를 사용합니다. 아래 명령은 학습용 DLL을 준비한 뒤 `deepprint_train.exe` 옆에 복사합니다. 독립 ONNX 대조에는 발표용 DLL을 빌드할 때 사용한 모델 파일을 지정합니다.
 
 ```powershell
 cmake -P tools/deepprint/prepare_training.cmake
@@ -416,7 +416,7 @@ cmake -S . -B build/cpp-research "-DFINGERPRINT_TORCH_NATIVE_DIR=$native"
 cmake --build build/cpp-research --target deepprint_train deepprint_research
 $research = '.\build\cpp-research\deepprint_research.exe'
 $train = '.\build\cpp-research\deepprint_train.exe'
-$model = 'build/cpp-validation/presentation/deepprint_texminu_512.onnx'
+$model = ((Select-String '^FINGERPRINT_DEEPPRINT_MODEL:FILEPATH=' build/cpp-validation/CMakeCache.txt).Line -split '=', 2)[1]
 $dll = 'build/cpp-validation/presentation/IndustryAlgorithm.dll'
 $pairs = 'log/fvc2004-roi-deployment-20261125/app-run/logs/run-1795556427179-31364-1/pairs.csv'
 $idSplit = 'log/finetune-noise40-20261124-175440/split.csv'

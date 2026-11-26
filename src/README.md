@@ -9,7 +9,7 @@
 | 영역 | 실행 단위와 소스 | 입력 → 출력 | 주요 의존성 |
 |---|---|---|---|
 | Model Generation | `export_deepprint.exe`, [변환 진입점](../tools/deepprint/export_model.cpp), [그래프·배치표](../tools/deepprint/architecture/) | 공개 체크포인트 + 고정 그래프 → 배포 가능 ONNX, 해시 JSON | C++17, 자체 protobuf wire 처리, Windows BCrypt |
-| Runtime Inference | `IndustryAlgorithm.dll`, [KISA 진입점](api/kisa_api.cpp), [feature](feature/), [matching](matching/) | 회색조 픽셀 → 템플릿, 템플릿 쌍 → 정합 점수 | [KISA 공개 헤더](../include/kisa_api.h), ONNX Runtime CPU, 모델 파일 |
+| Runtime Inference | `IndustryAlgorithm.dll`, [KISA 진입점](api/kisa_api.cpp), [feature](feature/), [matching](matching/) | 회색조 픽셀 → 템플릿, 템플릿 쌍 → 정합 점수 | [KISA 공개 헤더](../include/kisa_api.h), ONNX Runtime CPU, DLL 내장 모델 |
 | Model Training | `deepprint_train.exe`, [학습 진입점](../tools/deepprint/train_main.cpp), [학습 연산](../tools/deepprint/training.cpp) | 기준 모델 + FVC + 분할 → 후보 파라미터, ONNX, 검증 CSV | 특징 추출에는 ORT, 역전파에는 네이티브 LibTorchSharp·LibTorch CPU |
 | Research | `deepprint_research.exe`, [실험 진입점](../tools/deepprint/research_main.cpp), [공통 데이터·추론](../tools/deepprint/research_data.cpp) | 영상·쌍·분할·모델 → 캐시, 전처리 비교, ONNX/KISA 대조 | ORT, TIFF 로더, 모드에 따라 시험 대상 DLL |
 | Evaluation | `fingerprint_compare.exe`, [GUI](../app/comparison_window.cpp), [비교·통계·보고서](../app/fingerprint_image.cpp) | x64 DLL + DB + 비교 규칙 → 쌍별 결과, 지표, HTML/RTF와 SVG | Win32, WIC, 공개 KISA 함수 |
@@ -714,7 +714,8 @@ GUI의 다섯 페이지를 따라가면 **① 실험 설정**이 DLL·DB·정답
 
 | 항목 | 시연 구성 |
 |---|---|
-| 산출물 | `fingerprint_compare.exe`, `IndustryAlgorithm.dll`, `deepprint_texminu_512.onnx`, `onnxruntime.dll`. [시연 구성과 빌드 명령](../README.md) |
+| 산출물 | 외부 평가 시스템에는 `IndustryAlgorithm.dll`과 `onnxruntime.dll`을 함께 전달한다. 자체 GUI가 필요하면 `fingerprint_compare.exe`를 추가한다. [시연 구성과 빌드 명령](../README.md) |
+| 모델 로딩 | 빌드 시 선택한 ONNX 전체를 Windows RCDATA 리소스에 포함한다. 첫 특징 추출 시 리소스의 주소와 바이트 수로 ORT 세션을 만든다. [리소스](feature/deepprint_model.rc.in) · [로딩 코드](feature/deepprint_extractor.cpp) |
 | 모델 / Fine-tuning | 사전학습 `DeepPrint_TexMinu`. 시연 ONNX는 기준 체크포인트에서 변환했다. A·B·C, residual 및 증강 후보는 실험용 산출물로 분리했다. [변환 사양](../tools/deepprint/architecture/README.md) · [후보 선택 기록](../log/cpp-port-verification/branch-selection.csv) |
 | 입출력 | `image float32[1,1,299,299]` → `embedding float32[1,512]`, Texture 256 + Minutiae 256. [추론기](feature/deepprint_extractor.cpp) |
 | 템플릿 | 헤더 8 + float 512개 = 2,056바이트. [형식](feature/template_manager.cpp) |

@@ -1,5 +1,6 @@
 #include "feature_extractor.h"
 #include "deepprint_preprocessing.h"
+#include "deepprint_resource.h"
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -23,23 +24,22 @@ namespace fingerprint {
 namespace {
 
 namespace fs = std::filesystem;
-constexpr wchar_t kModelFile[] = L"deepprint_texminu_512.onnx";
+constexpr wchar_t kModuleAnchor[] = L"DeepPrint";
 constexpr std::array<int64_t, 4> kInputShape{1, 1, kDeepPrintInputSize, kDeepPrintInputSize};
 
 HMODULE recognitionModule(DWORD flags)
 {
     HMODULE module = nullptr;
-    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | flags, kModelFile, &module)) {
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | flags, kModuleAnchor, &module)) {
         throw std::runtime_error("Unable to locate the fingerprint DLL");
     }
     return module;
 }
 
-fs::path recognitionDirectory()
+fs::path recognitionDirectory(HMODULE module)
 {
     std::wstring path(32768, L'\0');
-    const auto size = GetModuleFileNameW(recognitionModule(GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT),
-                                         path.data(), static_cast<DWORD>(path.size()));
+    const auto size = GetModuleFileNameW(module, path.data(), static_cast<DWORD>(path.size()));
     if (size == 0 || size >= path.size()) {
         throw std::runtime_error("Unable to read the fingerprint DLL path");
     }
@@ -78,17 +78,20 @@ Library loadRuntime(const fs::path& directory)
 
 class DeepPrintRuntime {
 public:
-    explicit DeepPrintRuntime(const fs::path& directory)
-        : library_(loadRuntime(directory)), environment_(ORT_LOGGING_LEVEL_WARNING, "DeepPrint"),
+    explicit DeepPrintRuntime(HMODULE module)
+        : library_(loadRuntime(recognitionDirectory(module))), environment_(ORT_LOGGING_LEVEL_WARNING, "DeepPrint"),
           memory_(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault))
     {
-        const auto modelPath = directory / kModelFile;
-        if (!fs::is_regular_file(modelPath)) {
-            throw std::runtime_error("Missing deepprint_texminu_512.onnx beside IndustryAlgorithm.dll");
+        const auto resource = FindResource(module, TEXT(DEEPPRINT_MODEL_RESOURCE_NAME), RT_RCDATA);
+        const auto handle = resource ? LoadResource(module, resource) : nullptr;
+        const auto data = handle ? LockResource(handle) : nullptr;
+        const auto size = resource ? SizeofResource(module, resource) : 0;
+        if (!data || !size) {
+            throw std::runtime_error("Cannot read the embedded DeepPrint model");
         }
         Ort::SessionOptions options;
         options.SetIntraOpNumThreads(4);
-        session_ = Ort::Session(environment_, modelPath.c_str(), options);
+        session_ = Ort::Session(environment_, data, size, options);
     }
 
     void extract(std::vector<float>& image, Features& embedding)
@@ -131,7 +134,7 @@ DeepPrintRuntime& runtime()
     // KISA exposes no teardown entry point. Keep the inference session and its
     // worker pool resident until process exit, outside Windows DLL detach.
     static DeepPrintRuntime* const instance = [] {
-        auto session = std::make_unique<DeepPrintRuntime>(recognitionDirectory());
+        auto session = std::make_unique<DeepPrintRuntime>(recognitionModule(GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT));
         recognitionModule(GET_MODULE_HANDLE_EX_FLAG_PIN);
         return session.release();
     }();

@@ -1,4 +1,5 @@
 #include "fingerprint_image.h"
+#include "deepprint_resource.h"
 #include "image_format.h"
 #include "kisa_api.h"
 
@@ -17,6 +18,7 @@
 #include <tuple>
 #include <fstream>
 #include <sstream>
+#include <string_view>
 #include <array>
 #include <iomanip>
 #include <mutex>
@@ -542,27 +544,42 @@ fs::path backendDirectory()
     return fs::path(path).parent_path();
 }
 #ifdef FINGERPRINT_DYNAMIC_BACKEND
-// DeepPrint locates its runtime/model relative to the loaded DLL itself.
-// A private, versioned copy lets an external replacement reuse the app's assets
-// without modifying its source folder or an already-loaded (pinned) DLL.
+// Inspect the model resource without executing the DLL or reading its weights into a string.
+bool hasEmbeddedDeepPrintModel(const fs::path &source)
+{
+    HMODULE module = LoadLibraryExW(source.c_str(), nullptr,
+                                    LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE);
+    if (!module)
+        return false;
+    bool found = FindResource(module, TEXT(DEEPPRINT_MODEL_RESOURCE_NAME), RT_RCDATA) != nullptr;
+    FreeLibrary(module);
+    return found;
+}
+
 fs::path prepareBackend(const fs::path &selected)
 {
     const auto source = fs::weakly_canonical(selected);
-    std::ifstream input(source, std::ios::binary);
-    if (!input)
-        throw std::runtime_error("선택한 DLL 파일을 읽을 수 없습니다.");
-    std::string contents((std::istreambuf_iterator<char>(input)), {});
-    const std::wstring modelName = L"deepprint_texminu_512.onnx";
-    const std::string wideMarker(reinterpret_cast<const char *>(modelName.data()),
-                                 modelName.size() * sizeof(wchar_t));
-    if (contents.find("deepprint_texminu_512.onnx") == std::string::npos &&
-        contents.find(wideMarker) == std::string::npos)
-        return source; // Other KISA algorithms keep their own dependency layout.
     const auto originalFolder = source.parent_path();
+    std::vector<fs::path> required{L"onnxruntime.dll"};
+    if (!hasEmbeddedDeepPrintModel(source))
+    {
+        // Older DeepPrint DLLs reference a separate model by its ASCII or UTF-16 name.
+        std::ifstream input(source, std::ios::binary);
+        if (!input)
+            throw std::runtime_error("선택한 DLL 파일을 읽을 수 없습니다.");
+        const std::string contents((std::istreambuf_iterator<char>(input)), {});
+        const std::wstring modelName = L"deepprint_texminu_512.onnx";
+        const std::string wideMarker(reinterpret_cast<const char *>(modelName.data()),
+                                     modelName.size() * sizeof(wchar_t));
+        if (contents.find("deepprint_texminu_512.onnx") == std::string::npos &&
+            contents.find(wideMarker) == std::string::npos)
+            return source; // Other KISA algorithms keep their own dependency layout.
+        required.emplace_back(modelName);
+    }
     const auto appFolder = backendDirectory();
     std::vector<fs::path> assets;
     bool needsFallback = false;
-    for (const auto *name : {L"onnxruntime.dll", L"deepprint_texminu_512.onnx"})
+    for (const auto &name : required)
     {
         auto asset = originalFolder / name;
         if (!fs::is_regular_file(asset))
@@ -571,8 +588,8 @@ fs::path prepareBackend(const fs::path &selected)
             needsFallback = true;
         }
         if (!fs::is_regular_file(asset))
-            throw std::runtime_error("DeepPrint 모델 또는 런타임이 없습니다. onnxruntime.dll과 "
-                                     "deepprint_texminu_512.onnx를 실행 파일 폴더에 준비하세요.");
+            throw std::runtime_error("DeepPrint 실행에 필요한 파일을 DLL 또는 실행 파일 폴더에 준비하세요: " +
+                                     name.u8string());
         assets.push_back(asset);
     }
     if (!needsFallback)
@@ -588,7 +605,7 @@ fs::path prepareBackend(const fs::path &selected)
     }
     std::sort(assets.begin(), assets.end());
     unsigned long long hash = 14695981039346656037ull;
-    auto append = [&](const std::string &value)
+    auto append = [&](std::string_view value)
     {
         for (unsigned char c : value)
         {
@@ -596,7 +613,14 @@ fs::path prepareBackend(const fs::path &selected)
             hash *= 1099511628211ull;
         }
     };
-    append(contents);
+    std::ifstream binary(source, std::ios::binary);
+    std::array<char, 65536> block;
+    while (binary) {
+        binary.read(block.data(), block.size());
+        append(std::string_view(block.data(), static_cast<std::size_t>(binary.gcount())));
+    }
+    if (!binary.eof())
+        throw std::runtime_error("선택한 DLL 파일을 읽을 수 없습니다.");
     append(source.u8string());
     for (const auto &asset : assets)
     {
