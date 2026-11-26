@@ -610,7 +610,7 @@ void pollResults(AppState &s)
 }
 
 // 3. Page rendering. All pages read the same plan/results; none owns a second run.
-void drawCard(AppState &s, HDC dc, int x, int y, int w, int h)
+void drawCard(const AppState &s, HDC dc, int x, int y, int w, int h)
 {
     rounded(dc, box(s, x, y + 2, w, h), RGB(235, 238, 246), RGB(235, 238, 246), 16);
     rounded(dc, box(s, x, y, w, h), kCard, kBorder, 16);
@@ -721,6 +721,40 @@ void drawResultsPage(AppState &s, HDC dc)
           650, 760, 582, 22, Small, s.dirty ? kDanger : kMuted,
           DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
 }
+double detAxis(double rate)
+{
+    return (std::log10((std::max)(1e-4, rate)) + 4) / 4;
+}
+
+void drawErrorMarkers(const AppState &s, HDC dc, const Statistics &stats, int chart,
+                      int left, int top, int right, int bottom)
+{
+    if (chart == 1 && std::isfinite(stats.eerPoint.threshold))
+    {
+        const int x = left + static_cast<int>((right - left) *
+                                             (std::min)(1., stats.eerPoint.threshold));
+        line(s, dc, x, top, x, bottom, kMuted);
+        for (double rate : {stats.eerPoint.fmr, stats.eerPoint.fnmr})
+            dot(s, dc, x - 4, bottom - static_cast<int>((bottom - top) * rate) - 4, 8, kAccent);
+    }
+    if (chart == 2)
+    {
+        const Statistics::Point points[]{stats.eerPoint, stats.fmr100Point, stats.fmr1000Point};
+        const wchar_t *labels[]{L"EER", L"FMR100", L"FMR1000"};
+        for (int i = 0; i < 3; ++i)
+        {
+            const auto &point = points[i];
+            if (!std::isfinite(point.threshold))
+                continue;
+            const int x = left + static_cast<int>((right - left) * detAxis(point.fmr));
+            const int y = bottom - static_cast<int>((bottom - top) * detAxis(point.fnmr));
+            dot(s, dc, x - 4, y - 4, 8, kAccent);
+            write(s, dc, labels[i], (std::min)(x + 6, right - 64),
+                  (std::clamp)(y - 16 - 14 * i, top, bottom - 18), 64, 18, Small, kMuted);
+        }
+    }
+}
+
 void drawRecognitionPage(AppState &s, HDC dc)
 {
     const auto &stats = s.statistics;
@@ -728,9 +762,11 @@ void drawRecognitionPage(AppState &s, HDC dc)
                std::to_wstring(stats.genuineOk) + L"쌍 · 성공한 비교 기준", kGenuine);
     drawMetric(s, dc, 1, L"다른 손가락 평균 점수", number(stats.impostorMean),
                std::to_wstring(stats.impostorOk) + L"쌍 · 성공한 비교 기준", kImpostor);
-    drawMetric(s, dc, 2, L"등오류율 · EER", percent(stats.eer),
-               L"두 오류율이 같아지는 지점의 추정값", kAccent);
-    drawMetric(s, dc, 3, L"현재 판정 기준", number(s.threshold),
+    const auto eerBasis = std::abs(stats.eerPoint.fmr - stats.eerPoint.fnmr) < 1e-12
+                              ? L"EER 임계값 " : L"EER 추정 임계값 ";
+    drawMetric(s, dc, 2, stats.provisional ? L"잠정 등오류율 · EER" : L"등오류율 · EER",
+               percent(stats.eer), eerBasis + number(stats.eerPoint.threshold, 6), kAccent);
+    drawMetric(s, dc, 3, L"개별 비교 판정 기준", number(s.threshold),
                L"점수가 기준 이상이면 같은 지문으로 판정");
     drawCard(s, dc, 24, 326, 812, 462);
     drawCard(s, dc, 856, 326, 400, 462);
@@ -767,9 +803,12 @@ void drawRecognitionPage(AppState &s, HDC dc)
     {
         int y = bottom - height * i / 4;
         line(s, dc, left, y, right, y, kBorder);
-        write(s, dc, number(ymax * 100 * i / 4, 0) + L"%", 32, y - 10, 42, 20, Small, kMuted,
+        const auto yLabel = s.chart == 2 ? number(std::pow(10., i - 2), i < 2 ? 2 : 0)
+                                          : number(ymax * 100 * i / 4, 0);
+        write(s, dc, yLabel + L"%", 32, y - 10, 42, 20, Small, kMuted,
               DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
-        write(s, dc, number(i / 4., 2), left + width * i / 4 - 20, bottom + 8, 44, 22, Small,
+        write(s, dc, s.chart == 2 ? yLabel + L"%" : number(i / 4., 2),
+              left + width * i / 4 - 20, bottom + 8, 44, 22, Small,
               kMuted, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
     bool enough = s.chart == 2 ? std::isfinite(stats.fmr) && std::isfinite(stats.fnmr)
@@ -777,7 +816,7 @@ void drawRecognitionPage(AppState &s, HDC dc)
     if (!enough)
     {
         write(s, dc,
-              s.chart == 2 ? L"ROC에는 본인·타인 비교 결과가 모두 필요합니다"
+              s.chart == 2 ? L"DET에는 본인·타인 비교 결과가 모두 필요합니다"
                            : L"비교를 실행하면 점수 분포가 표시됩니다",
               110, 544, 650, 36, Medium, kMuted, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
@@ -806,9 +845,14 @@ void drawRecognitionPage(AppState &s, HDC dc)
             for (const auto &point : stats.curve)
             {
                 double xValue = s.chart == 2 ? point.fmr : (std::min)(1., point.threshold);
-                double yValue = s.chart == 2 ? 1. - point.fnmr : series ? point.fnmr : point.fmr;
+                double yValue = s.chart == 2 ? point.fnmr : series ? point.fnmr : point.fmr;
                 if (!std::isfinite(xValue) || !std::isfinite(yValue))
                     continue;
+                if (s.chart == 2)
+                {
+                    xValue = detAxis(xValue);
+                    yValue = detAxis(yValue);
+                }
                 int x = static_cast<int>((left + width * xValue) * s.sx);
                 int y = static_cast<int>((bottom - height * yValue) * s.sy);
                 if (first)
@@ -824,15 +868,13 @@ void drawRecognitionPage(AppState &s, HDC dc)
     if (s.chart != 2)
         line(s, dc, left + static_cast<int>(width * s.threshold), top,
              left + static_cast<int>(width * s.threshold), bottom, kAccent);
-    else if (enough)
-        dot(s, dc, left + static_cast<int>(width * stats.fmr) - 4,
-            bottom - static_cast<int>(height * (1. - stats.fnmr)) - 4, 8, kAccent);
+    drawErrorMarkers(s, dc, stats, s.chart, left, top, right, bottom);
     write(s, dc,
           s.chart == 0   ? L"정합 점수"
           : s.chart == 1 ? L"판정 기준"
                          : L"다른 지문 오인식 비율",
           48, 738, 764, 24, Small, kMuted, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
-    write(s, dc, L"판정 기준 조절", 880, 348, 352, 30, Medium);
+    write(s, dc, L"개별 비교 판정 기준 조절", 880, 348, 352, 30, Medium);
     write(s, dc, number(s.threshold), 880, 390, 352, 38, Number, kAccent);
     write(s, dc, L"기준 이상: 같은 지문 / 기준 미만: 다른 지문", 880, 480, 352, 24, Small, kMuted);
     line(s, dc, 880, 518, 1232, 518, kBorder);
@@ -925,6 +967,171 @@ void drawPerformancePage(AppState &s, HDC dc)
               std::to_wstring(s.statistics.failed) + L"건",
           568, 754, 664, 24, Small, kMuted);
 }
+void drawThresholdSummary(const AppState &s, HDC dc, const Statistics &stats)
+{
+    struct MetricPoint
+    {
+        const wchar_t *label;
+        Statistics::Point point;
+        double value;
+        bool eer = false;
+    };
+    std::array<MetricPoint, 5> metrics{{
+        {L"ZeroFNMR", stats.zeroFnmrPoint, stats.zeroFnmr},
+        {L"EER", stats.eerPoint, stats.eer, true},
+        {L"FMR100", stats.fmr100Point, stats.fmr100},
+        {L"FMR1000", stats.fmr1000Point, stats.fmr1000},
+        {L"ZeroFMR", stats.zeroFmrPoint, stats.zeroFmr},
+    }};
+    auto thresholdOrder = [](const MetricPoint &metric)
+    {
+        return std::isfinite(metric.point.threshold) ? metric.point.threshold : 2.;
+    };
+    std::stable_sort(metrics.begin(), metrics.end(), [&](const auto &a, const auto &b)
+                     { return thresholdOrder(a) < thresholdOrder(b); });
+
+    constexpr COLORREF fmrColor = RGB(53, 105, 218), fnmrColor = RGB(203, 67, 61);
+    constexpr int left = 80, right = 777, top = 412, bottom = 613;
+    int firstTick = 0, lastTick = 10;
+    double ceiling = 1.;
+    if (std::isfinite(metrics.front().point.threshold))
+    {
+        double minimum = 1., maximum = 0., peak = 0.;
+        for (const auto &metric : metrics)
+        {
+            if (!std::isfinite(metric.point.threshold))
+                continue;
+            minimum = (std::min)(minimum, metric.point.threshold);
+            maximum = (std::max)(maximum, metric.point.threshold);
+            peak = (std::max)({peak, metric.point.fmr, metric.point.fnmr});
+        }
+        firstTick = (std::clamp)(static_cast<int>(std::floor((minimum - .075) * 10)), 0, 8);
+        lastTick = (std::clamp)(static_cast<int>(std::ceil((maximum + .075) * 10)), 2, 10);
+        for (double scale : {.04, .08, .10, .20, .40, .60, .80, 1.})
+            if (peak * 1.15 <= scale)
+            {
+                ceiling = scale;
+                break;
+            }
+    }
+    auto xAt = [&](double threshold)
+    {
+        return left + static_cast<int>(std::lround((right - left) *
+                   ((std::min)(1., threshold) * 10 - firstTick) / (lastTick - firstTick)));
+    };
+    auto yAt = [&](double rate)
+    { return bottom - static_cast<int>(std::lround((bottom - top) * rate / ceiling)); };
+    auto thresholdLabel = [&](double threshold)
+    {
+        // The sweep uses nextafter(score) to test strict rejection at a tied score.
+        const double previous = std::nextafter(threshold, -1.);
+        const bool strict = threshold > 1. ||
+            std::binary_search(stats.genuineScores.begin(), stats.genuineScores.end(), previous) ||
+            std::binary_search(stats.impostorScores.begin(), stats.impostorScores.end(), previous);
+        const double score = strict ? previous : threshold;
+        const bool thousandth = std::abs(score * 1000 - std::round(score * 1000)) < 1e-9;
+        if (thousandth)
+            return (strict ? L"t > " : L"t = ") + number(score);
+        return L"t ≈ " + number(threshold, 6);
+    };
+
+    drawCard(s, dc, 24, 288, 776, 404);
+    write(s, dc, L"임계값에 따른 성능 지표", 44, 304, 720, 29, Medium);
+    for (int tick = 0; tick <= 4; ++tick)
+    {
+        const double rate = ceiling * tick / 4;
+        const int y = yAt(rate);
+        line(s, dc, left, y, right, y, kBorder);
+        const double label = rate * 100;
+        write(s, dc, number(label, std::abs(label - std::round(label)) < 1e-9 ? 0 : 1) + L"%",
+              27, y - 9, 46, 18, Small, kMuted, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+    }
+    for (int tick = firstTick; tick <= lastTick; ++tick)
+    {
+        const int x = xAt(tick / 10.);
+        line(s, dc, x, bottom, x, bottom + 4, kMuted);
+        write(s, dc, number(tick / 10., 1), x - 18, bottom + 6, 36, 20, Small, kMuted,
+              DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    }
+    line(s, dc, left, top, left, bottom, kMuted);
+    line(s, dc, left, bottom, right, bottom, kMuted);
+    write(s, dc, L"판정 임계값", left, 640, right - left, 20, Small, kMuted,
+          DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+    const int clipState = SaveDC(dc);
+    if (clipState)
+    {
+        const auto plot = box(s, left, top, right - left + 1, bottom - top + 1);
+        IntersectClipRect(dc, plot.left, plot.top, plot.right, plot.bottom);
+    }
+    for (bool genuine : {false, true})
+    {
+        const auto pen = CreatePen(PS_SOLID, 2, genuine ? fnmrColor : fmrColor);
+        const auto previous = SelectObject(dc, pen);
+        bool first = true;
+        for (const auto &point : stats.curve)
+        {
+            const double rate = genuine ? point.fnmr : point.fmr;
+            if (!std::isfinite(rate))
+                continue;
+            const auto pixel = box(s, xAt(point.threshold), yAt(rate), 0, 0);
+            if (first)
+                MoveToEx(dc, pixel.left, pixel.top, nullptr);
+            else
+                LineTo(dc, pixel.left, pixel.top);
+            first = false;
+        }
+        SelectObject(dc, previous);
+        DeleteObject(pen);
+    }
+    if (clipState)
+        RestoreDC(dc, clipState);
+
+    constexpr int firstLabelX = 45, labelSpacing = 148, labelWidth = 136;
+    for (size_t i = 0; i < metrics.size(); ++i)
+    {
+        const auto &metric = metrics[i];
+        if (std::isfinite(metric.point.threshold))
+            line(s, dc, firstLabelX + static_cast<int>(i) * labelSpacing + labelWidth / 2, 393,
+                 xAt(metric.point.threshold), yAt(metric.value), kMuted);
+    }
+    for (size_t i = 0; i < metrics.size(); ++i)
+    {
+        const auto &metric = metrics[i];
+        const int labelX = firstLabelX + static_cast<int>(i) * labelSpacing;
+        const bool available = std::isfinite(metric.point.threshold);
+        if (available)
+        {
+            const int x = xAt(metric.point.threshold), y = yAt(metric.value);
+            if (metric.eer && metric.point.fmr != metric.point.fnmr)
+            {
+                const int fmrY = yAt(metric.point.fmr), fnmrY = yAt(metric.point.fnmr);
+                line(s, dc, x, fmrY, x, fnmrY, kGenuine);
+                dot(s, dc, x - 3, fmrY - 3, 6, fmrColor);
+                dot(s, dc, x - 3, fnmrY - 3, 6, fnmrColor);
+            }
+            dot(s, dc, x - 6, y - 6, 12, kCard);
+            dot(s, dc, x - 4, y - 4, 8, kGenuine);
+        }
+        rounded(dc, box(s, labelX, 344, labelWidth, 50), kBackground, kBorder, 8);
+        write(s, dc, metric.label, labelX + 9, 348, 118, 19, Body, available ? kInk : kMuted);
+        write(s, dc,
+              available ? number(metric.value * 100, 2) + L"% · " +
+                              thresholdLabel(metric.point.threshold)
+                        : L"—",
+              labelX + 9, 368, 118, 19, Small, kMuted);
+    }
+    if (!std::isfinite(stats.fmr) || !std::isfinite(stats.fnmr))
+        write(s, dc, L"본인·타인 비교 결과가 모두 필요합니다.", left, 484, right - left, 28,
+              Body, kMuted, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    dot(s, dc, 273, 669, 8, fmrColor);
+    write(s, dc, L"FMR", 286, 663, 52, 20, Small, kMuted);
+    dot(s, dc, 349, 669, 8, fnmrColor);
+    write(s, dc, L"FNMR", 362, 663, 58, 20, Small, kMuted);
+    dot(s, dc, 434, 669, 8, kGenuine);
+    write(s, dc, L"평가 지점", 447, 663, 76, 20, Small, kMuted);
+}
+
 void drawSummaryPage(AppState &s, HDC dc)
 {
     const auto &stats = s.statistics;
@@ -933,8 +1140,8 @@ void drawSummaryPage(AppState &s, HDC dc)
     auto scope = s.database.empty() ? L"DB 미선택" : s.database.filename().wstring();
     scope += L"  ·  " + std::to_wstring(stats.completed) + L" / " +
              std::to_wstring(s.plan.pairs.size()) + L"쌍 완료";
-    scope += s.running         ? L"  ·  평가 진행 중"
-             : s.cancel        ? L"  ·  중단된 부분 결과"
+    scope += s.running         ? L"  ·  평가 진행 중 · 완료 쌍 기준 잠정 지표"
+             : s.cancel        ? L"  ·  중단 · 완료 쌍 기준 잠정 지표"
              : stats.completed ? L"  ·  현재 실행 결과"
                                : L"  ·  비교를 먼저 실행하세요";
     write(s, dc, scope, 24, 248, 1232, 25, Body, kMuted);
@@ -982,7 +1189,7 @@ void drawSummaryPage(AppState &s, HDC dc)
               L"확인하세요.",
               24, 690, 1232, 28, Body, kMuted);
         write(s, dc,
-              L"오른쪽 위 ‘보고서 저장’으로 모든 지표와 그래프를 한 파일에 담을 수 있습니다.", 24,
+              L"오른쪽 위 ‘보고서 저장’에서 항목과 문서 형식을 선택할 수 있습니다.", 24,
               732, 1232, 28, Body, kAccent);
     }
     else if (s.summaryTab == 1)
@@ -1014,32 +1221,22 @@ void drawSummaryPage(AppState &s, HDC dc)
     }
     else
     {
-        const wchar_t *chartTitles[]{L"점수 분포 · 본인 / 타인", L"FMR(t) / FNMR(t)",
-                                     L"ROC · FMR / FNMR (로그축)"};
-        for (int chart = 0; chart < 3; ++chart)
+        drawThresholdSummary(s, dc, stats);
+        for (bool det : {false, true})
         {
-            int x = 24 + chart * 416;
-            drawCard(s, dc, x, 288, 400, 404);
-            write(s, dc, chartTitles[chart], x + 20, 308, 360, 28, Small, kMuted);
-            int left = x + 48, right = x + 376, top = 378, bottom = 618;
-            int w = right - left, h = bottom - top;
-            write(s, dc,
-                  chart == 0   ? L"초록: 같은 손가락 · 주황: 다른 손가락"
-                  : chart == 1 ? L"주황: FMR · 초록: FNMR"
-                               : L"가로: FMR · 세로: FNMR",
-                  x + 20, 346, 360, 22, Small, kMuted);
+            constexpr int x = 816, left = 868, right = 1229;
+            const int y = det ? 498 : 288, cardHeight = det ? 194 : 198;
+            const int top = y + 59, bottom = y + cardHeight - 32;
+            const int w = right - left, h = bottom - top;
+            drawCard(s, dc, x, y, 440, cardHeight);
+            write(s, dc, det ? L"DET · FMR / FNMR (로그축)" : L"점수 분포 · 본인 / 타인",
+                  x + 20, y + 10, 400, 24, Body);
+            write(s, dc, det ? L"가로: FMR · 세로: FNMR"
+                             : L"초록: 같은 손가락 · 주황: 다른 손가락",
+                  x + 20, y + 35, 400, 19, Small, kMuted);
             for (int grid = 0; grid < 3; ++grid)
                 line(s, dc, left, top + h * grid / 2, right, top + h * grid / 2, kBorder);
-            for (int tick = 0; tick < 3; ++tick)
-                write(s, dc,
-                      chart == 0   ? L""
-                      : chart == 2 ? (tick == 0   ? L"100%"
-                                      : tick == 1 ? L"1%"
-                                                  : L"0.01%")
-                                   : std::to_wstring(100 - tick * 50) + L"%",
-                      x + 3, top + h * tick / 2 - 10, 42, 20, Small, kMuted,
-                      DT_RIGHT | DT_SINGLELINE);
-            if (chart == 0)
+            if (!det)
             {
                 std::array<size_t, 20> g{}, i{};
                 double ymax = .01;
@@ -1068,53 +1265,42 @@ void drawSummaryPage(AppState &s, HDC dc)
             }
             else
             {
-                for (int series = 0; series < (chart == 1 ? 2 : 1); ++series)
+                const wchar_t *ticks[]{L"100%", L"1%", L"0.01%"};
+                for (int tick = 0; tick < 3; ++tick)
+                    write(s, dc, ticks[tick], x + 3, top + h * tick / 2 - 9, 41, 18, Small, kMuted,
+                          DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+                auto pen = CreatePen(PS_SOLID, 2, kAccent);
+                auto old = SelectObject(dc, pen);
+                bool first = true;
+                for (const auto &point : stats.curve)
                 {
-                    auto pen = CreatePen(PS_SOLID, 2,
-                                         chart == 2 ? kAccent
-                                         : series   ? kGenuine
-                                                    : kImpostor);
-                    auto old = SelectObject(dc, pen);
-                    bool first = true;
-                    for (const auto &point : stats.curve)
-                    {
-                        double vx = chart == 1 ? (std::min)(1., point.threshold) : point.fmr;
-                        double vy = chart == 1 ? (series ? point.fnmr : point.fmr) : point.fnmr;
-                        if (!std::isfinite(vx) || !std::isfinite(vy))
-                            continue;
-                        if (chart == 2)
-                        {
-                            vx = (std::log10((std::max)(1e-4, vx)) + 4) / 4;
-                            vy = (std::log10((std::max)(1e-4, vy)) + 4) / 4;
-                        }
-                        int px = static_cast<int>((left + w * vx) * s.sx),
-                            py = static_cast<int>((bottom - h * vy) * s.sy);
-                        if (first)
-                            MoveToEx(dc, px, py, nullptr);
-                        else
-                            LineTo(dc, px, py);
-                        first = false;
-                    }
-                    SelectObject(dc, old);
-                    DeleteObject(pen);
+                    if (!std::isfinite(point.fmr) || !std::isfinite(point.fnmr))
+                        continue;
+                    int px = static_cast<int>((left + w * detAxis(point.fmr)) * s.sx),
+                        py = static_cast<int>((bottom - h * detAxis(point.fnmr)) * s.sy);
+                    if (first)
+                        MoveToEx(dc, px, py, nullptr);
+                    else
+                        LineTo(dc, px, py);
+                    first = false;
                 }
+                SelectObject(dc, old);
+                DeleteObject(pen);
+                drawErrorMarkers(s, dc, stats, 2, left, top, right, bottom);
             }
             if (!stats.completed)
-                write(s, dc, L"실행 후 그래프가 표시됩니다", x + 36, 480, 328, 30, Body, kMuted);
-            write(s, dc, chart == 2 ? L"0.01%" : L"0", left, 630, 60, 20, Small, kMuted);
-            write(s, dc,
-                  chart == 0   ? L"정합 점수"
-                  : chart == 1 ? L"판정 기준"
-                               : L"FMR (0은 최소 눈금에 표시)",
-                  left + 65, 630, w - 130, 20, Small, kMuted,
+                write(s, dc, L"실행 후 그래프가 표시됩니다", left, top + h / 2 - 14, w, 28,
+                      Body, kMuted, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            write(s, dc, det ? L"0.01%" : L"0", left, bottom + 6, 60, 20, Small, kMuted);
+            write(s, dc, det ? L"FMR (0은 최소 눈금에 표시)" : L"정합 점수",
+                  left + 65, bottom + 6, w - 130, 20, Small, kMuted,
                   DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-            write(s, dc, chart == 2 ? L"100%" : L"1", right - 55, 630, 55, 20, Small, kMuted,
+            write(s, dc, det ? L"100%" : L"1", right - 55, bottom + 6, 55, 20, Small, kMuted,
                   DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
         }
 
         write(s, dc,
-              L"점수 분포는 각 집단의 성공 비교 수로 정규화합니다. 로그 그래프에서 0은 최소 눈금에 "
-              L"표시합니다.",
+              L"축은 평가 지점에 맞춰 표시합니다. EER 추정 지점은 해당 임계값의 FMR과 FNMR을 평균한 값입니다.",
               24, 714, 1232, 26, Small, kMuted);
     }
     write(s, dc,
@@ -1387,6 +1573,117 @@ void selectionDetail(AppState &s)
         s.status += L"  ·  " + r.detail;
     invalidate(s);
 }
+struct ReportDialog
+{
+    ReportOptions options;
+    bool word = false;
+};
+
+INT_PTR CALLBACK reportDialogProc(HWND dialog, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    constexpr int firstItem = 100, eer = 110, format = 111;
+    const std::array<bool ReportOptions::*, 7> items{
+        &ReportOptions::experiment, &ReportOptions::recognition, &ReportOptions::failures,
+        &ReportOptions::processing, &ReportOptions::resources, &ReportOptions::charts,
+        &ReportOptions::comparisons};
+    if (message == WM_INITDIALOG)
+    {
+        SetWindowLongPtrW(dialog, DWLP_USER, lParam);
+        SetWindowTextW(dialog, L"성능 보고서 내보내기");
+        auto add = [&](const wchar_t *type, const wchar_t *label, DWORD style, int id,
+                       int x, int y, int width, int height)
+        {
+            RECT rect{x, y, x + width, y + height};
+            MapDialogRect(dialog, &rect);
+            HWND control = CreateWindowExW(0, type, label, WS_CHILD | WS_VISIBLE | style,
+                rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, dialog,
+                reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
+                GetModuleHandleW(nullptr), nullptr);
+            SendMessageW(control, WM_SETFONT,
+                         reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
+            return control;
+        };
+        add(L"STATIC", L"보고서에 포함할 항목", 0, -1, 10, 8, 210, 12);
+        const wchar_t *labels[]{L"실험 정보", L"인식 성능", L"처리 실패", L"처리 시간",
+                               L"템플릿 · 메모리", L"그래프 및 별도 SVG", L"비교별 결과"};
+        for (size_t i = 0; i < items.size(); ++i)
+        {
+            auto checkbox = add(L"BUTTON", labels[i], WS_TABSTOP | BS_AUTOCHECKBOX,
+                firstItem + static_cast<int>(i), 10 + 114 * (i % 2), 24 + 16 * (i / 2), 110, 13);
+            SendMessageW(checkbox, BM_SETCHECK, BST_CHECKED, 0);
+        }
+        auto combo = [&](const wchar_t *label, int id, int y,
+                         std::initializer_list<const wchar_t *> choices)
+        {
+            add(L"STATIC", label, 0, -1, 10, y + 2, 65, 12);
+            auto control = add(L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST, id,
+                               77, y, 157, 90);
+            for (const auto *choice : choices)
+                SendMessageW(control, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(choice));
+            SendMessageW(control, CB_SETCURSEL, 0, 0);
+        };
+        combo(L"EER 집계 방식", eer, 92, {L"두 방식 모두", L"처리 실패 포함", L"성공한 비교만"});
+        combo(L"문서 형식", format, 113, {L"HTML (.html)", L"Microsoft Word 호환 RTF (.rtf)"});
+        add(L"BUTTON", L"다음", WS_TABSTOP | BS_DEFPUSHBUTTON, IDOK, 122, 139, 53, 16);
+        add(L"BUTTON", L"취소", WS_TABSTOP | BS_PUSHBUTTON, IDCANCEL, 181, 139, 53, 16);
+        return TRUE;
+    }
+    if (message != WM_COMMAND)
+        return FALSE;
+    switch (LOWORD(wParam))
+    {
+    case firstItem + 1:
+        EnableWindow(GetDlgItem(dialog, eer),
+                     IsDlgButtonChecked(dialog, firstItem + 1) == BST_CHECKED);
+        return TRUE;
+    case IDOK:
+    {
+        auto &config = *reinterpret_cast<ReportDialog *>(GetWindowLongPtrW(dialog, DWLP_USER));
+        bool any = false;
+        for (size_t i = 0; i < items.size(); ++i)
+        {
+            const bool checked = IsDlgButtonChecked(dialog, firstItem + static_cast<int>(i)) ==
+                                 BST_CHECKED;
+            config.options.*items[i] = checked;
+            any |= checked;
+        }
+        if (!any)
+        {
+            MessageBoxW(dialog, L"보고서에 포함할 항목을 하나 이상 선택하세요.",
+                        L"성능 보고서", MB_OK | MB_ICONINFORMATION);
+            return TRUE;
+        }
+        config.options.eer = static_cast<ReportEer>(
+            SendDlgItemMessageW(dialog, eer, CB_GETCURSEL, 0, 0));
+        config.word = SendDlgItemMessageW(dialog, format, CB_GETCURSEL, 0, 0) == 1;
+        EndDialog(dialog, IDOK);
+        return TRUE;
+    }
+    case IDCANCEL:
+        EndDialog(dialog, IDCANCEL);
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
+bool chooseReportOptions(HWND owner, ReportDialog &config)
+{
+    struct alignas(DWORD) Template
+    {
+        DLGTEMPLATE dialog;
+        WORD menu = 0, windowClass = 0, title = 0;
+    } definition{};
+    definition.dialog.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME | DS_CENTER;
+    definition.dialog.cx = 244;
+    definition.dialog.cy = 165;
+    const auto result = DialogBoxIndirectParamW(GetModuleHandleW(nullptr), &definition.dialog,
+        owner, reportDialogProc, reinterpret_cast<LPARAM>(&config));
+    if (result == -1)
+        throw std::runtime_error("보고서 설정 창을 열지 못했습니다.");
+    return result == IDOK;
+}
+
 void command(AppState &s, int id, int code)
 {
     if (!s.ready)
@@ -1459,29 +1756,37 @@ void command(AppState &s, int id, int code)
     {
         if (s.running || s.dirty || !s.workerError.empty() || !s.statistics.completed)
             return;
+        ReportDialog config;
+        if (!chooseReportOptions(s.window, config))
+            return;
+        const auto *extension = config.word ? L"rtf" : L"html";
         std::array<wchar_t, 32768> path{};
         SYSTEMTIME now{};
         GetLocalTime(&now);
         std::wostringstream name;
         name << L"fingerprint-report-" << now.wYear << now.wMonth << now.wDay << L"-" << now.wHour
-             << now.wMinute << now.wSecond << L".html";
+             << now.wMinute << now.wSecond << L"." << extension;
         lstrcpynW(path.data(), name.str().c_str(), static_cast<int>(path.size()));
         OPENFILENAMEW dialog{};
         dialog.lStructSize = sizeof(dialog);
         dialog.hwndOwner = s.window;
         dialog.lpstrFile = path.data();
         dialog.nMaxFile = static_cast<DWORD>(path.size());
-        dialog.lpstrFilter = L"평가 보고서 HTML (*.html)\0*.html\0\0";
-        dialog.lpstrDefExt = L"html";
+        dialog.lpstrFilter = config.word ? L"Word 호환 RTF (*.rtf)\0*.rtf\0\0"
+                                         : L"평가 보고서 HTML (*.html)\0*.html\0\0";
+        dialog.lpstrDefExt = extension;
         dialog.lpstrTitle = L"평가 요약·그래프·비교 결과 보고서 저장";
         dialog.lpstrInitialDir = s.root.c_str();
         dialog.Flags = OFN_NOCHANGEDIR | OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT;
         if (!GetSaveFileNameW(&dialog))
             return;
+        if (CompareStringOrdinal(demo::fs::path(path.data()).extension().c_str(), -1,
+                                 (std::wstring(L".") + extension).c_str(), -1, TRUE) != CSTR_EQUAL)
+            throw std::runtime_error("선택한 문서 형식과 파일 확장자가 다릅니다.");
         saveEvaluationReport(s.plan, s.results, s.timing, s.threshold, s.elapsedMilliseconds,
-                             s.cancel, path.data());
-        s.status = L"보고서를 저장했습니다. 브라우저에서 열면 인쇄 / PDF 저장도 가능합니다: " +
-                   std::wstring(path.data());
+                             s.cancel, path.data(), config.options);
+        s.status = (config.options.charts ? L"보고서와 별도 SVG 그래프를 저장했습니다. "
+                                         : L"보고서를 저장했습니다. ") + std::wstring(path.data());
         invalidate(s);
         return;
     }
@@ -1638,7 +1943,7 @@ void createControls(AppState &s)
     addButton(s, FilterErrors, L"잘못된 판정");
     addButton(s, ChartDistribution, L"점수 분포");
     addButton(s, ChartErrors, L"오류율");
-    addButton(s, ChartRoc, L"ROC 곡선");
+    addButton(s, ChartRoc, L"DET 곡선");
     addButton(s, NavSettings, L"01  실험 설정");
     addButton(s, NavResults, L"02  비교 실행 · 결과");
     addButton(s, NavRecognition, L"03  인식 성능");

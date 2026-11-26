@@ -8,7 +8,29 @@ namespace fingerprint {
 
 inline constexpr int kDeepPrintInputSize = 299;
 
-// Optional foreground crop, white square padding, and antialiased resize to [0, 1].
-std::vector<float> preprocessDeepPrint(const unsigned char* image, ImageFormat format, bool cropForeground = false);
+enum class DeepPrintPreprocessing {
+    Standard,
+    Bilateral,
+    ForegroundCrop,
+    ForegroundCenter
+};
+
+inline DeepPrintPreprocessing deepPrintPreprocessingForType(int iType, bool useFvc2004Roi)
+{
+    if (iType == 2) {
+        return DeepPrintPreprocessing::Bilateral;
+    }
+    if (iType == 3 && useFvc2004Roi) {
+        return DeepPrintPreprocessing::ForegroundCrop;
+    }
+    return DeepPrintPreprocessing::Standard;
+}
+
+std::vector<float> preprocessDeepPrint(
+    const unsigned char* image, ImageFormat format,
+    DeepPrintPreprocessing preprocessing = DeepPrintPreprocessing::Standard);
+
+std::vector<float> preprocessDeepPrintVariant(const unsigned char* image, ImageFormat format,
+    DeepPrintPreprocessing mode, int rangeSigma, int marginPercent, bool bicubic);
 
 } // namespace fingerprint

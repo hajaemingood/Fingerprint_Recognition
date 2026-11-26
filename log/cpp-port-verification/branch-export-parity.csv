@@ -1,0 +1,4 @@
+database,max_embedding_delta,max_score_delta,comparison_pairs
+FVC2000_DB3_B,1.3411e-07,0,3160
+FVC2002_DB2_B,1.04308e-07,0,3160
+FVC2004_DB1_B,1.04308e-07,0,3160

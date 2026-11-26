@@ -1,6 +1,7 @@
 #include "feature/deepprint_preprocessing.h"
 #include "feature/template_manager.h"
 #include "kisa_api.h"
+#include "tiff_image.h"
 #include "matching/fingerprint_matcher.h"
 
 #include <algorithm>
@@ -63,7 +64,8 @@ void verifyEmptyForegroundFallback()
     const auto format = fingerprint::imageFormat(3);
     const std::vector<unsigned char> image(format.width * format.height, 255);
     const auto full = fingerprint::preprocessDeepPrint(image.data(), format);
-    if (fingerprint::preprocessDeepPrint(image.data(), format, true) != full) {
+    if (fingerprint::preprocessDeepPrint(image.data(), format,
+                                         fingerprint::DeepPrintPreprocessing::ForegroundCrop) != full) {
         throw std::runtime_error("Empty foreground must use the full frame");
     }
 }
@@ -72,7 +74,7 @@ void verifyEmptyForegroundFallback()
 
 int wmain(int argc, wchar_t** argv)
 {
-    if (argc != 2) {
+    if (argc != 2 && argc != 3) {
         return 2;
     }
     try {
@@ -82,11 +84,19 @@ int wmain(int argc, wchar_t** argv)
         for (const int type : {1, 2, 3}) {
             const auto format = fingerprint::imageFormat(type);
             const auto stem = std::to_string(type);
-            auto pixels = readValues<unsigned char>(references / (stem + ".raw"),
-                                                   format.width * format.height);
-            const bool crop = FINGERPRINT_FVC2004_ROI && type == 3;
-            const auto input = fingerprint::preprocessDeepPrint(pixels.data(), format, crop);
-            const auto referenceStem = crop ? stem + ".roi" : stem;
+            const std::array<const char*, 3> folders{"FVC2000_DB3_B","FVC2002_DB2_B","FVC2004_DB1_B"};
+            auto pixels = argc == 3 ? fvc::readTiff(std::filesystem::path(argv[2]) / folders[type - 1] / "101_1.tif").pixels
+                                    : readValues<unsigned char>(references / (stem + ".raw"),format.width * format.height);
+            if (pixels.size() != static_cast<std::size_t>(format.width * format.height))
+                throw std::runtime_error("Unexpected reference image dimensions");
+            const auto preprocessing = fingerprint::deepPrintPreprocessingForType(type, FINGERPRINT_FVC2004_ROI);
+            const auto input = fingerprint::preprocessDeepPrint(pixels.data(), format, preprocessing);
+            auto referenceStem = stem;
+            if (preprocessing == fingerprint::DeepPrintPreprocessing::Bilateral) {
+                referenceStem += ".bilateral12";
+            } else if (preprocessing == fingerprint::DeepPrintPreprocessing::ForegroundCrop) {
+                referenceStem += ".roi20";
+            }
             const auto expectedInput = readValues<float>(references / (referenceStem + ".input.f32"), input.size());
             const auto expected = readValues<float>(references / (referenceStem + ".embedding.f32"),
                                                     fingerprint::kFeatureCount);

@@ -11,7 +11,7 @@
         "BUILD_TESTING": "ON",
         "FINGERPRINT_BUILD_GUI": "ON",
         "FINGERPRINT_DEEPPRINT": "ON",
-        "FINGERPRINT_DEEPPRINT_REFERENCE_DIR": "${sourceDir}/build/models/parity"
+        "FINGERPRINT_DEEPPRINT_REFERENCE_DIR": "${sourceDir}/tests/fixtures/deepprint"
       }
     },
     {
@@ -107,7 +107,7 @@
         "CMAKE_BUILD_TYPE": "Release",
         "FINGERPRINT_BUILD_GUI": "ON",
         "FINGERPRINT_DEEPPRINT": "ON",
-        "FINGERPRINT_DEEPPRINT_REFERENCE_DIR": "${sourceDir}/build/models/parity",
+        "FINGERPRINT_DEEPPRINT_REFERENCE_DIR": "${sourceDir}/tests/fixtures/deepprint",
         "BUILD_TESTING": "ON"
       }
     }

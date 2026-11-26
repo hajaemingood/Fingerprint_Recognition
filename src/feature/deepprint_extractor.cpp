@@ -146,7 +146,7 @@ bool extractFeatures(int iType, const unsigned char* image, Features& features)
     if (format.width == 0) {
         return false;
     }
-    auto input = preprocessDeepPrint(image, format, FINGERPRINT_FVC2004_ROI && iType == 3);
+    auto input = preprocessDeepPrint(image, format, deepPrintPreprocessingForType(iType, FINGERPRINT_FVC2004_ROI));
     runtime().extract(input, features);
     return true;
 }

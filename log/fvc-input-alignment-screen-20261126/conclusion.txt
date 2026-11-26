@@ -1,0 +1,26 @@
+DeepPrint 전처리 DLL 갱신과 입력 정렬 평가
+2026-11-26
+
+배포 전 DLL, ONNX, 런타임을 build/rollback/fvc-before-preprocessing-20261126/에 보관했다.
+build/evaluator/IndustryAlgorithm.dll의 FVC2002 입력에는 3×3 양방향 필터(공간 σ=1, 밝기 차이 σ=12),
+FVC2004 입력에는 전경 폭·높이 각각의 20% 여백을 적용했다. 질감·특징점 정합 가중치는 22:78이다.
+DeepPrint 기준 벡터 CTest와 noise_and_metrics가 통과했다. 평가 앱 모듈로 FVC2002와 FVC2004에서 본인·타인 비교 및 HTML 저장을 확인했다.
+
+같은 원본 TIFF와 기존 전체 비교 목록으로 DB당 3,160쌍을 새 DLL에서 재평가했다. 처리 실패는 없었다.
+정렬 실험은 299×299 입력의 전경 블록 중심으로 이동하는 방법을 비교했다. 이동량은 축마다 최대 18픽셀이다.
+후보는 중심까지 절반 이동, 전체 이동, 전체 이동과 주축 기반 최대 12° 기울기 보정이다.
+개발과 확인에 DB마다 서로 다른 5개 손가락 ID를 사용했다. 후보는 개발 EER만 보고 골랐다.
+
+              이전 DLL 전체 EER    새 DLL 전체 EER     정렬 후보 전체 EER
+FVC2000                2.64%               2.64%                   2.64%
+FVC2002                8.03%               6.48%                   6.48%
+FVC2004                5.69%               4.78%                   4.63%
+
+FVC2002에서 모든 정렬 후보의 개발 EER은 양방향 필터만 사용하는 기준보다 높았다.
+FVC2004는 전경 중심까지 절반 이동이 채택된 실험 후보였다. 확인 EER은 새 DLL 4.56%에서 후보 4.13%로 내려갔다.
+정렬 후보는 ONNX로 평가했다. 새 DLL과 같은 전처리의 ONNX 기준 점수는 FVC2002 2쌍에서만 0.001 달랐고 EER은 같았다.
+입력 정렬은 실험 후보에 적용했다. 배포 DLL에는 현재 전처리 개선을 적용했으며, 모든 DB의 EER 3% 이하 목표는 아직 달성하지 못했다.
+
+재현 도구: deepprint_research.exe align (README의 C++ 연구 도구 명령 참조)
+모델, 비교 목록, 분할 입력은 log/fvc-preprocessing-screen-20261126/conclusion.txt와 같다.
+개발 후보별 결과: development.csv. 최종 후보 비교: evaluation.csv. 입력 해시: experiment.json.

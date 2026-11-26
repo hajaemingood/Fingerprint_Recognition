@@ -1,0 +1,2 @@
+arm,steps,lr,mode,rank,negatives,loss,strength,texture_weight,baseline_texture_weight
+A,4,0.0001,original,0,hard,triplet,1,0,0

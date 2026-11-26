@@ -1,0 +1,4 @@
+database,pytorch_onnx_max_delta,onnx_native_max_delta,pytorch_onnx_max_score_delta,onnx_native_max_score_delta,unequal_native_scores
+FVC2000_DB3_B,2.4400651454925537e-07,0.0,0.0,0.0,0
+FVC2002_DB2_B,3.650784492492676e-07,7.552653551101685e-05,0.0,0.001,3
+FVC2004_DB1_B,2.60770320892334e-07,0.0,0.0,0.0,0

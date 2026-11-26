@@ -15,7 +15,45 @@ struct Crop {
     int height;
 };
 
-Crop foregroundCrop(const unsigned char* image, ImageFormat format)
+std::vector<unsigned char> filterBilateral(const unsigned char* image, ImageFormat format, int rangeSigma)
+{
+    // Spatial sigma is one pixel. Cache the deployed range sigma across calls.
+    const auto makeWeights = [](int sigma) {
+        std::array<std::array<float, 256>, 3> table{};
+        for (int spatial = 0; spatial <= 2; ++spatial) {
+            for (int difference = 0; difference < 256; ++difference) {
+                const float range = static_cast<float>(difference) / sigma;
+                table[spatial][difference] = std::exp(-0.5f * (spatial + range * range));
+            }
+        }
+        return table;
+    };
+    static const auto deployedWeights = makeWeights(12);
+    decltype(makeWeights(12)) candidateWeights;
+    const auto& weights = rangeSigma == 12 ? deployedWeights : (candidateWeights = makeWeights(rangeSigma));
+
+    std::vector<unsigned char> filtered(static_cast<std::size_t>(format.width) * format.height);
+    for (int y = 0; y < format.height; ++y) {
+        for (int x = 0; x < format.width; ++x) {
+            const int center = image[y * format.width + x];
+            float total = 0.0f;
+            float weighted = 0.0f;
+            for (int dy = -1; dy <= 1; ++dy) {
+                const auto* row = image + std::clamp(y + dy, 0, format.height - 1) * format.width;
+                for (int dx = -1; dx <= 1; ++dx) {
+                    const int neighbor = row[std::clamp(x + dx, 0, format.width - 1)];
+                    const float weight = weights[dx * dx + dy * dy][std::abs(neighbor - center)];
+                    total += weight;
+                    weighted += neighbor * weight;
+                }
+            }
+            filtered[y * format.width + x] = static_cast<unsigned char>(std::nearbyint(weighted / total));
+        }
+    }
+    return filtered;
+}
+
+Crop foregroundCrop(const unsigned char* image, ImageFormat format, int marginPercent)
 {
     constexpr int block = 16;
     constexpr int pixels = block * block;
@@ -51,10 +89,10 @@ Crop foregroundCrop(const unsigned char* image, ImageFormat format)
         || std::count_if(activeColumns.begin(), activeColumns.end(), measured) < 4) {
         return {0, 0, format.width, format.height};
     }
-    const auto extent = [measured, block](const std::vector<int>& counts, int dimension) {
+    const auto extent = [measured, block, marginPercent](const std::vector<int>& counts, int dimension) {
         const int first = block * static_cast<int>(std::find_if(counts.begin(), counts.end(), measured) - counts.begin());
         const int last = block * static_cast<int>(std::find_if(counts.rbegin(), counts.rend(), measured).base() - counts.begin());
-        const int margin = (last - first + 5) / 10;
+        const int margin = ((last - first) * marginPercent + 50) / 100;
         return std::array<int, 2>{std::max(0, first - margin), std::min(dimension, last + margin)};
     };
     const auto x = extent(activeColumns, format.width);
@@ -67,12 +105,12 @@ struct ResizeWeights {
     std::vector<float> coefficients;
 };
 
-std::array<ResizeWeights, kDeepPrintInputSize> makeWeights(int side)
+std::array<ResizeWeights, kDeepPrintInputSize> makeWeights(int side, bool bicubic)
 {
     std::array<ResizeWeights, kDeepPrintInputSize> weights;
     const float scale = static_cast<float>(side) / kDeepPrintInputSize;
-    const float support = std::max(1.0f, scale);
-    const float inverseSupport = 1.0f / support;
+    const float inverseSupport = 1.0f / std::max(1.0f, scale);
+    const float support = std::max(1.0f, scale) * (bicubic ? 2 : 1);
     for (int output = 0; output < kDeepPrintInputSize; ++output) {
         // Match the float32 pixel-center and weighting convention of flx.
         const float center = (output + 0.5f) * scale;
@@ -82,7 +120,10 @@ std::array<ResizeWeights, kDeepPrintInputSize> makeWeights(int side)
         float sum = 0.0f;
         for (int pixel = filter.first; pixel <= last; ++pixel) {
             const float distance = (pixel - center + 0.5f) * inverseSupport;
-            const float value = std::max(0.0f, 1.0f - std::abs(distance));
+            const float d = std::abs(distance);
+            float value = std::max(0.0f, 1.0f - d);
+            if (bicubic) value = d < 1 ? ((1.5f*d - 2.5f)*d)*d + 1
+                                      : ((-0.5f*d + 2.5f)*d - 4)*d + 2;
             filter.coefficients.push_back(value);
             sum += value;
         }
@@ -95,13 +136,39 @@ std::array<ResizeWeights, kDeepPrintInputSize> makeWeights(int side)
 
 } // namespace
 
-std::vector<float> preprocessDeepPrint(const unsigned char* image, ImageFormat format, bool cropForeground)
+std::vector<float> preprocessDeepPrint(
+    const unsigned char* image, ImageFormat format, DeepPrintPreprocessing preprocessing)
 {
-    const Crop crop = cropForeground ? foregroundCrop(image, format) : Crop{0, 0, format.width, format.height};
+    return preprocessDeepPrintVariant(image, format, preprocessing, 12, 20, false);
+}
+
+std::vector<float> preprocessDeepPrintVariant(const unsigned char* image, ImageFormat format,
+    DeepPrintPreprocessing preprocessing, int rangeSigma, int marginPercent, bool bicubic)
+{
+    std::vector<unsigned char> filtered;
+    if (preprocessing == DeepPrintPreprocessing::Bilateral) {
+        filtered = filterBilateral(image, format, rangeSigma);
+        image = filtered.data();
+    }
+    if (preprocessing == DeepPrintPreprocessing::ForegroundCenter) {
+        const auto box = foregroundCrop(image, format, 0);
+        const int dx = static_cast<int>(std::floor((format.width - box.width) * 0.5)) - box.left;
+        const int dy = static_cast<int>(std::floor((format.height - box.height) * 0.5)) - box.top;
+        filtered.assign(static_cast<size_t>(format.width) * format.height, 255);
+        for (int y = std::max(0, -dy); y < std::min(format.height, format.height - dy); ++y) {
+            const int first = std::max(0, -dx);
+            std::copy(image + y * format.width + first,
+                      image + y * format.width + std::min(format.width, format.width - dx),
+                      filtered.begin() + ((y + dy) * format.width + dx + first));
+        }
+        image = filtered.data();
+    }
+    const Crop crop = preprocessing == DeepPrintPreprocessing::ForegroundCrop
+        ? foregroundCrop(image, format, marginPercent) : Crop{0, 0, format.width, format.height};
     const int side = std::max(crop.width, crop.height);
     const int left = (side - crop.width) / 2;
     const int top = (side - crop.height) / 2;
-    const auto weights = makeWeights(side);
+    const auto weights = makeWeights(side, bicubic);
     std::vector<float> horizontal(side * kDeepPrintInputSize, 1.0f);
 
     for (int y = 0; y < crop.height; ++y) {
@@ -129,7 +196,7 @@ std::vector<float> preprocessDeepPrint(const unsigned char* image, ImageFormat f
                 value += coefficient * horizontal[row * kDeepPrintInputSize + x];
                 ++row;
             }
-            output[y * kDeepPrintInputSize + x] = value;
+            output[y * kDeepPrintInputSize + x] = bicubic ? std::clamp(value, 0.f, 1.f) : value;
         }
     }
     return output;

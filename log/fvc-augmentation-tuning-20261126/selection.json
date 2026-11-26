@@ -1,0 +1,48 @@
+{
+  "lr": 3e-05,
+  "steps": 48,
+  "mode": "original",
+  "branch": "both",
+  "rank": 0,
+  "negatives": "hard",
+  "loss": "triplet",
+  "strength": 1.0,
+  "texture_weight": 0.85,
+  "baseline_texture_weight": 0.85,
+  "tail_block_gate": false,
+  "baseline_validation_eer_at_22": [
+    [
+      0.013764880952380952,
+      0.058407738095238096,
+      0.22767857142857142
+    ],
+    [
+      0.0,
+      0.0,
+      0.04724702380952381
+    ],
+    [
+      0.058407738095238096,
+      0.058407738095238096,
+      0.0
+    ]
+  ],
+  "pre_fusion_validation_eer_at_22": [
+    [
+      0.0078125,
+      0.058407738095238096,
+      0.22767857142857142
+    ],
+    [
+      0.0,
+      0.0,
+      0.04724702380952381
+    ],
+    [
+      0.058407738095238096,
+      0.058407738095238096,
+      0.0
+    ]
+  ],
+  "config": "three inner folds, four train IDs and three validation IDs per database"
+}

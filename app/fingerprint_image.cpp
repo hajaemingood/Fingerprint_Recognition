@@ -1093,6 +1093,13 @@ Statistics summarize(const Plan &plan, const std::vector<Result> &results, doubl
         }
         ++s.completed;
         ++(genuine ? s.genuine : s.impostor);
+        if (r.status == Status::Success || r.status == Status::AttemptError ||
+            r.status == Status::CompareError)
+        {
+            ++(genuine ? s.genuineAttempted : s.impostorAttempted);
+            if (r.status != Status::Success)
+                ++(genuine ? s.genuineRejected : s.impostorRejected);
+        }
         if (r.status != Status::Success)
         {
             ++s.failed;
@@ -1106,8 +1113,7 @@ Statistics summarize(const Plan &plan, const std::vector<Result> &results, doubl
     std::sort(s.impostorScores.begin(), s.impostorScores.end());
     s.genuineOk = s.genuineScores.size();
     s.impostorOk = s.impostorScores.size();
-    s.genuineRejected = s.genuine - s.genuineOk;
-    s.impostorRejected = s.impostor - s.impostorOk;
+    s.provisional = s.completed != plan.pairs.size();
     if (matchCount)
         s.matchMean = matchSum / matchCount;
     if (genuineMatchCount)
@@ -1143,7 +1149,7 @@ Statistics summarize(const Plan &plan, const std::vector<Result> &results, doubl
         }
     for (double t : thresholds)
         s.curve.push_back(point(t));
-    auto equalError = [](const std::vector<Statistics::Point> &curve)
+    auto equalError = [](const std::vector<Statistics::Point> &curve) -> Statistics::Point
     {
         for (size_t i = 0; i < curve.size(); ++i)
         {
@@ -1151,19 +1157,18 @@ Statistics summarize(const Plan &plan, const std::vector<Result> &results, doubl
             if (!std::isfinite(p.fmr) || !std::isfinite(p.fnmr))
                 continue;
             if (std::abs(p.fmr - p.fnmr) < 1e-12)
-                return p.fmr;
+                return p;
             if (i && curve[i - 1].fnmr <= curve[i - 1].fmr && p.fnmr >= p.fmr)
-                return (std::min)(curve[i - 1].fmr + curve[i - 1].fnmr, p.fmr + p.fnmr) / 2;
+            {
+                const auto &previous = curve[i - 1];
+                return previous.fmr + previous.fnmr <= p.fmr + p.fnmr ? previous : p;
+            }
         }
-        return std::numeric_limits<double>::quiet_NaN();
+        return {};
     };
-    s.eer = equalError(s.curve);
+    s.eerPoint = equalError(s.curve);
+    s.eer = (s.eerPoint.fmr + s.eerPoint.fnmr) / 2;
     std::vector<Statistics::Point> successfulCurve;
-    auto keepMinimum = [](double &target, double value)
-    {
-        if (!std::isfinite(target) || value < target)
-            target = value;
-    };
     for (const auto &p : s.curve)
     {
         size_t accepted =
@@ -1176,16 +1181,25 @@ Statistics summarize(const Plan &plan, const std::vector<Result> &results, doubl
             {p.threshold, ratio(accepted, s.impostorOk), ratio(rejected, s.genuineOk)});
         if (!std::isfinite(p.fmr) || !std::isfinite(p.fnmr))
             continue;
+        auto keepMinimum = [&](double &value, Statistics::Point &selected, double candidate)
+        {
+            if (!std::isfinite(value) || candidate < value)
+            {
+                value = candidate;
+                selected = p;
+            }
+        };
         if (p.fmr <= .01 + 1e-12)
-            keepMinimum(s.fmr100, p.fnmr);
+            keepMinimum(s.fmr100, s.fmr100Point, p.fnmr);
         if (p.fmr <= .001 + 1e-12)
-            keepMinimum(s.fmr1000, p.fnmr);
+            keepMinimum(s.fmr1000, s.fmr1000Point, p.fnmr);
         if (p.fmr == 0)
-            keepMinimum(s.zeroFmr, p.fnmr);
+            keepMinimum(s.zeroFmr, s.zeroFmrPoint, p.fnmr);
         if (p.fnmr == 0)
-            keepMinimum(s.zeroFnmr, p.fmr);
+            keepMinimum(s.zeroFnmr, s.zeroFnmrPoint, p.fmr);
     }
-    s.eerWithoutFailures = equalError(successfulCurve);
+    s.eerWithoutFailuresPoint = equalError(successfulCurve);
+    s.eerWithoutFailures = (s.eerWithoutFailuresPoint.fmr + s.eerWithoutFailuresPoint.fnmr) / 2;
     return s;
 }
 std::vector<EvaluationMetric> evaluationMetrics(const Statistics &s, const EvaluationTiming &t)
@@ -1204,14 +1218,22 @@ std::vector<EvaluationMetric> evaluationMetrics(const Statistics &s, const Evalu
     auto add =
         [&](const wchar_t *group, const wchar_t *title, std::wstring value, std::wstring note)
     { out.push_back({group, title, std::move(value), std::move(note)}); };
-    add(L"인식 성능", L"등오류율 · EER", pct(s.eer), L"처리 실패 포함 · 낮을수록 좋음");
-    add(L"인식 성능", L"등오류율 · EER*", pct(s.eerWithoutFailures), L"성공한 비교만으로 계산");
+    auto eerNote = [&](const Statistics::Point &point, const std::wstring &basis)
+    {
+        if (!std::isfinite(point.threshold))
+            return basis;
+        return basis + (std::abs(point.fmr - point.fnmr) < 1e-12 ? L" · 임계값 " : L" · 추정 임계값 ") +
+               fmt(point.threshold, 6, L"");
+    };
+    add(L"인식 성능", L"등오류율 · EER", pct(s.eer), eerNote(s.eerPoint, L"처리 실패 포함"));
+    add(L"인식 성능", L"등오류율 · EER*", pct(s.eerWithoutFailures),
+        eerNote(s.eerWithoutFailuresPoint, L"성공한 비교만"));
     add(L"인식 성능", L"FMR100", pct(s.fmr100), L"FMR ≤ 1%에서 가장 낮은 FNMR");
     add(L"인식 성능", L"FMR1000", pct(s.fmr1000), L"FMR ≤ 0.1%에서 가장 낮은 FNMR");
     add(L"인식 성능", L"ZeroFMR", pct(s.zeroFmr), L"FMR = 0에서 가장 낮은 FNMR");
     add(L"인식 성능", L"ZeroFNMR",
         std::isfinite(s.zeroFnmr) ? pct(s.zeroFnmr)
-        : s.genuineRejected       ? L"도달 불가"
+        : s.genuine > s.genuineOk ? L"도달 불가"
                                   : L"—",
         L"FNMR = 0에서 가장 낮은 FMR");
     auto rejection = [&](const wchar_t *title, size_t n, size_t total)
@@ -1219,9 +1241,9 @@ std::vector<EvaluationMetric> evaluationMetrics(const Statistics &s, const Evalu
         add(L"처리 실패", title, pct(avg(static_cast<double>(n), total)),
             std::to_wstring(n) + L" / " + std::to_wstring(total));
     };
-    rejection(L"등록 실패 · REJ ENROLL", t.registrationsRejected, t.registrationsProcessed);
-    rejection(L"본인 비교 처리 실패 · REJ NGRA", s.genuineRejected, s.genuine);
-    rejection(L"타인 비교 처리 실패 · REJ NIRA", s.impostorRejected, s.impostor);
+    rejection(L"등록 실패율 · FTE", t.registrationsRejected, t.registrationsProcessed);
+    rejection(L"본인 매칭 실패율 · REJgenuine", s.genuineRejected, s.genuineAttempted);
+    rejection(L"타인 매칭 실패율 · REJimpostor", s.impostorRejected, s.impostorAttempted);
     add(L"처리 시간", L"평균 등록 시간",
         fmt(avg(t.enrollmentMilliseconds, t.enrollmentCalls), 3, L" ms"), L"KISA_Enroll 호출 평균");
     add(L"처리 시간", L"평균 테스트 특징 추출 시간",
@@ -1249,7 +1271,8 @@ std::vector<EvaluationMetric> evaluationMetrics(const Statistics &s, const Evalu
 
 void saveEvaluationReport(const Plan &plan, const std::vector<Result> &results,
                           const EvaluationTiming &timing, double threshold,
-                          double elapsedMilliseconds, bool interrupted, const fs::path &file)
+                          double elapsedMilliseconds, bool interrupted, const fs::path &file,
+                          const ReportOptions &options)
 {
     if (results.size() != plan.pairs.size())
         throw std::runtime_error("비교 결과와 목록의 크기가 다릅니다.");
@@ -1294,198 +1317,426 @@ void saveEvaluationReport(const Plan &plan, const std::vector<Result> &results,
         return out.str();
     };
     auto pct = [&](double v) { return std::isfinite(v) ? fmt(v * 100, 2) + L"%" : L"—"; };
+    const bool word = CompareStringOrdinal(file.extension().c_str(), -1, L".rtf", -1, TRUE) ==
+                      CSTR_EQUAL;
+    std::ostringstream rtf;
+    rtf << "{\\rtf1\\ansi\\uc1\\deff0{\\fonttbl{\\f0 Malgun Gothic;}}\\f0\\fs22\n";
+    auto wordLine = [&](const std::wstring &value, bool heading = false)
+    {
+        if (!word)
+            return;
+        if (heading)
+            rtf << "\\pard\\sb200\\keepn\\b ";
+        for (wchar_t c : value)
+        {
+            if (c == L'\\' || c == L'{' || c == L'}')
+                rtf << '\\' << static_cast<char>(c);
+            else if (c == L'\n' || c == L'\r' || c == L'\t')
+                rtf << ' ';
+            else if (c >= 32 && c < 127)
+                rtf << static_cast<char>(c);
+            else
+                rtf << "\\u" << static_cast<short>(c) << '?';
+        }
+        if (heading)
+            rtf << "\\b0";
+        rtf << "\\par\n";
+    };
+    auto writeFile = [](const fs::path &path, const std::string &data)
+    {
+        std::ofstream out(path, std::ios::binary);
+        out.write(data.data(), static_cast<std::streamsize>(data.size()));
+        out.close();
+        if (!out)
+            throw std::runtime_error("보고서 파일을 저장하지 못했습니다.");
+    };
+    auto utf8 = [](const std::wstring &wide)
+    {
+        const int size = static_cast<int>(wide.size());
+        const int bytes = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide.data(), size,
+                                              nullptr, 0, nullptr, nullptr);
+        if (!bytes)
+            throw std::runtime_error("보고서 인코딩에 실패했습니다.");
+        std::string result(bytes, '\0');
+        WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide.data(), size, result.data(), bytes,
+                            nullptr, nullptr);
+        return result;
+    };
+    wordLine(L"지문 인식 평가 보고서", true);
     std::wostringstream html;
     html.imbue(std::locale::classic());
     html
         << LR"REPORT(<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>지문 인식 평가 보고서</title><style>
-*{box-sizing:border-box}body{margin:0;background:#f4f6fb;color:#1d263e;font:15px/1.6 'Malgun Gothic',sans-serif}main{max-width:1180px;margin:36px auto;padding:32px}header{border-bottom:3px solid #5b4fe0;padding-bottom:24px}h1{font-size:34px;margin:8px 0}h2{font-size:22px;margin:32px 0 16px}h3{margin:0 0 14px;font-size:17px}.muted,small{color:#738099}.badge{display:inline-block;background:#eeebff;color:#5b4fe0;padding:5px 12px;border-radius:20px}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.card,section.panel{background:white;border:1px solid #e4e8f2;border-radius:16px;padding:20px}.value{font-size:32px;font-weight:700;color:#5b4fe0;margin:10px 0}table{width:100%;border-collapse:collapse;background:white}td,th{padding:11px 14px;text-align:left;border-bottom:1px solid #e4e8f2}th{background:#f0eefb}td.path{word-break:break-all}svg{width:100%;height:auto}svg text{font:11px 'Malgun Gothic',sans-serif;fill:#738099}.notice{padding:16px 20px;background:#eeebff;border-radius:12px;margin-top:20px}details{margin:24px 0}button{float:right;background:#5b4fe0;color:white;border:0;border-radius:10px;padding:12px 20px;cursor:pointer}.scroll{overflow:auto}footer{font-size:13px;color:#738099;margin-top:32px}@media(max-width:800px){main{padding:16px}.grid{grid-template-columns:1fr}}@media print{body{background:white}main{margin:0;padding:0}button{display:none}.card,section,table{break-inside:avoid}details{display:block}h2{break-after:avoid}}
-</style><main><header><button onclick="document.querySelectorAll('details').forEach(d=>d.open=true);window.print()">인쇄 / PDF 저장</button><span class="badge">Fingerprint Lab · Evaluation</span><h1>지문 인식 평가 보고서</h1>)REPORT";
+*{box-sizing:border-box}body{margin:0;background:#f4f6fb;color:#1d263e;font:15px/1.6 'Malgun Gothic',sans-serif}main{max-width:1180px;margin:36px auto;padding:32px}header{border-bottom:3px solid #5b4fe0;padding-bottom:24px}h1{font-size:34px;margin:8px 0}h2{font-size:22px;margin:32px 0 16px}h3{margin:0 0 14px;font-size:17px}.muted,small{color:#738099}.badge{display:inline-block;background:#eeebff;color:#5b4fe0;padding:5px 12px;border-radius:20px}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.card,section.panel{background:white;border:1px solid #e4e8f2;border-radius:16px;padding:20px}.value{font-size:32px;font-weight:700;color:#5b4fe0;margin:10px 0}table{width:100%;border-collapse:collapse;background:white}td,th{padding:11px 14px;text-align:left;border-bottom:1px solid #e4e8f2}th{background:#f0eefb}td.path{word-break:break-all}svg{width:100%;height:auto}svg text{font:11px 'Malgun Gothic',sans-serif;fill:#738099}.notice{padding:16px 20px;background:#eeebff;border-radius:12px;margin-top:20px}details{margin:24px 0}.print-hint{float:right;color:#596580}.scroll{overflow:auto}footer{font-size:13px;color:#738099;margin-top:32px}@media(max-width:800px){main{padding:16px}.grid{grid-template-columns:1fr}}@media print{body{background:white}main{margin:0;padding:0}.print-hint{display:none}.card,section,table{break-inside:avoid}details{display:block}details::details-content{display:block;content-visibility:visible}h2{break-after:avoid}}
+</style><main><header><span class="print-hint">인쇄 / PDF 저장 · Ctrl+P</span><span class="badge">Fingerprint Lab · Evaluation</span><h1>지문 인식 평가 보고서</h1>)REPORT";
     SYSTEMTIME now{};
     GetLocalTime(&now);
+    auto heading = [&](const std::wstring &title)
+    {
+        html << L"<h2>" << escape(title) << L"</h2>";
+        wordLine(title, true);
+    };
     html << L"<p class=muted>생성 시각 (이 PC 현지 시간): " << now.wYear << L"-" << now.wMonth
          << L"-" << now.wDay << L" " << now.wHour << L":" << std::setw(2) << std::setfill(L'0')
          << now.wMinute << L"</p></header>";
     html << L"<div class=notice>"
-         << (interrupted || stats.completed < plan.pairs.size() ? L"부분 평가 결과"
+         << (interrupted || stats.provisional ? L"부분 평가 · 완료 쌍 기준 잠정 지표"
                                                                 : L"전체 목록 평가 완료")
          << L" · 완료 " << stats.completed << L" / " << plan.pairs.size() << L"쌍 · 성공 "
          << stats.genuineOk + stats.impostorOk << L"쌍 · 처리 실패 " << stats.failed << L"쌍</div>";
-    html << L"<h2>01 실험 정보</h2><table>";
+    wordLine((interrupted || stats.provisional ? L"부분 평가 · 완료 쌍 기준 잠정 지표 · 완료 "
+                                                                : L"전체 목록 평가 완료 · 완료 ") +
+             std::to_wstring(stats.completed) + L" / " + std::to_wstring(plan.pairs.size()) +
+             L"쌍 · 처리 실패 " + std::to_wstring(stats.failed) + L"쌍");
     auto row = [&](const std::wstring &key, const std::wstring &value)
     {
         html << L"<tr><th>" << escape(key) << L"</th><td class=path>" << escape(value)
              << L"</td></tr>";
+        wordLine(key + L" · " + value);
     };
-    row(L"알고리즘 DLL", plan.settings.algorithm.wstring());
-    row(L"테스트 DB", plan.settings.database.wstring());
-    row(L"비교 목록", plan.sourceFile.empty() ? L"규칙으로 생성" : plan.sourceFile.wstring());
-    row(L"목록 구성", L"이미지 " + std::to_wstring(plan.images.size()) + L"장 · 손가락 " +
-                          std::to_wstring(plan.fingers) + L"개 · 등록 " +
-                          std::to_wstring(plan.registrations) + L"장");
-    const wchar_t *registration[]{L"첫 번째 촬영본", L"무작위 1장", L"촬영번호 지정",
-                                  L"모든 촬영본 각각"};
-    const wchar_t *comparison[]{L"모든 후보", L"첫 후보 1장", L"무작위 N개", L"촬영번호 지정"};
-    auto rule = [](const wchar_t *const *names, int index)
-    { return index >= 0 && index < 4 ? std::wstring(names[index]) : std::wstring(L"알 수 없음"); };
-    row(L"등록 규칙", rule(registration, static_cast<int>(plan.settings.registration)) +
-                          L" · 지정 촬영번호 " + std::to_wstring(plan.settings.registrationIndex));
-    row(L"본인 / 타인 비교 규칙", rule(comparison, static_cast<int>(plan.settings.genuine)) +
-                                      L" / " +
-                                      rule(comparison, static_cast<int>(plan.settings.impostor)));
-    row(L"재현 설정", L"본인 지정번호 " + std::to_wstring(plan.settings.genuineIndex) +
-                          L" · 타인 지정번호 " + std::to_wstring(plan.settings.impostorIndex) +
-                          L" · 랜덤 N=" + std::to_wstring(plan.settings.randomCount) + L" · 시드=" +
-                          std::to_wstring(plan.settings.seed));
-    row(L"실행 설정",
-        L"동시 비교 " + std::to_wstring(plan.settings.parallelism) + L"개 · " +
-            (plan.settings.reuseFeatures ? L"테스트 특징 재사용" : L"매번 특징 추출"));
-    row(L"현재 판정 기준", fmt(threshold) + L" 이상이면 같은 지문으로 판정");
-    row(L"전체 경과 시간 / 성공 처리량",
-        fmt(elapsedMilliseconds / 1000.) + L" 초 / " +
-            (elapsedMilliseconds > 0
-                 ? fmt((stats.genuineOk + stats.impostorOk) * 1000. / elapsedMilliseconds, 2)
-                 : L"—") +
-            L" 쌍/초");
-    row(L"준비 / 비교 단계 경과 시간", fmt(timing.preparationMilliseconds / 1000.) + L" 초 / " +
-                                           fmt(timing.matchingMilliseconds / 1000.) + L" 초");
-    row(L"API 호출 / 재사용", L"등록 " + std::to_wstring(timing.enrollmentCalls) +
-                                  L" · 특징 추출 " + std::to_wstring(timing.attemptCalls) +
-                                  L" · 정합 " + std::to_wstring(timing.compareCalls) +
-                                  L" · 재사용 " + std::to_wstring(timing.cacheHits));
-    html << L"</table><h2>02 인식 성능</h2><div class=grid>";
-    const auto metrics = evaluationMetrics(stats, timing);
-    for (size_t i = 0; i < 6; ++i)
-        html << L"<div class=card><h3>" << escape(metrics[i].title) << L"</h3><div class=value>"
-             << escape(metrics[i].value) << L"</div><small>" << escape(metrics[i].note)
-             << L"</small></div>";
-    html << L"</div><p>현재 기준의 다른 지문 오인식 비율 (FMR): <b>" << pct(stats.fmr)
-         << L"</b> · 동일 지문 미인식 비율 (FNMR): <b>" << pct(stats.fnmr) << L"</b></p>";
-    for (const auto *group : {L"처리 실패", L"처리 시간", L"템플릿 · 메모리"})
+    if (options.experiment)
     {
-        html << L"<h2>" << group
-             << L"</h2><table><tr><th>지표</th><th>측정값</th><th>기준</th></tr>";
-        for (const auto &m : metrics)
-            if (m.group == group)
-                html << L"<tr><td>" << escape(m.title) << L"</td><td><b>" << escape(m.value)
-                     << L"</b></td><td>" << escape(m.note) << L"</td></tr>";
+        heading(L"실험 정보");
+        html << L"<table>";
+        row(L"알고리즘 DLL", plan.settings.algorithm.wstring());
+        row(L"테스트 DB", plan.settings.database.wstring());
+        row(L"비교 목록", plan.sourceFile.empty() ? L"규칙으로 생성" : plan.sourceFile.wstring());
+        row(L"목록 구성", L"이미지 " + std::to_wstring(plan.images.size()) + L"장 · 손가락 " +
+                              std::to_wstring(plan.fingers) + L"개 · 등록 " +
+                              std::to_wstring(plan.registrations) + L"장");
+        const wchar_t *registration[]{L"첫 번째 촬영본", L"무작위 1장", L"촬영번호 지정",
+                                      L"모든 촬영본 각각"};
+        const wchar_t *comparison[]{L"모든 후보", L"첫 후보 1장", L"무작위 N개", L"촬영번호 지정"};
+        auto rule = [](const wchar_t *const *names, int index)
+        { return index >= 0 && index < 4 ? std::wstring(names[index]) : std::wstring(L"알 수 없음"); };
+        row(L"등록 규칙", rule(registration, static_cast<int>(plan.settings.registration)) +
+                              L" · 지정 촬영번호 " + std::to_wstring(plan.settings.registrationIndex));
+        row(L"본인 / 타인 비교 규칙", rule(comparison, static_cast<int>(plan.settings.genuine)) +
+                                          L" / " +
+                                          rule(comparison, static_cast<int>(plan.settings.impostor)));
+        row(L"재현 설정", L"본인 지정번호 " + std::to_wstring(plan.settings.genuineIndex) +
+                              L" · 타인 지정번호 " + std::to_wstring(plan.settings.impostorIndex) +
+                              L" · 랜덤 N=" + std::to_wstring(plan.settings.randomCount) + L" · 시드=" +
+                              std::to_wstring(plan.settings.seed));
+        row(L"실행 설정",
+            L"동시 비교 " + std::to_wstring(plan.settings.parallelism) + L"개 · " +
+                (plan.settings.reuseFeatures ? L"테스트 특징 재사용" : L"매번 특징 추출"));
+        row(L"현재 판정 기준", fmt(threshold) + L" 이상이면 같은 지문으로 판정");
         html << L"</table>";
     }
-    html << L"<h2>03 점수와 오류 곡선</h2><div class=grid>";
-    for (int chart = 0; chart < 3; ++chart)
+    if (options.processing)
     {
-        html << L"<section class=panel><h3>"
-             << (chart == 0   ? L"점수 분포"
-                 : chart == 1 ? L"FMR(t) / FNMR(t)"
-                              : L"ROC · FMR / FNMR (로그축)")
-             << L"</h3><svg viewBox='0 0 360 250' role='img'>";
-        for (int g = 0; g <= 4; ++g)
+        heading(L"실행 시간 및 호출 수");
+        html << L"<table>";
+        row(L"전체 경과 시간 / 성공 처리량",
+            fmt(elapsedMilliseconds / 1000.) + L" 초 / " +
+                (elapsedMilliseconds > 0
+                     ? fmt((stats.genuineOk + stats.impostorOk) * 1000. / elapsedMilliseconds, 2)
+                     : L"—") +
+                L" 쌍/초");
+        row(L"준비 / 비교 단계 경과 시간", fmt(timing.preparationMilliseconds / 1000.) + L" 초 / " +
+                                               fmt(timing.matchingMilliseconds / 1000.) + L" 초");
+        row(L"API 호출 / 재사용", L"등록 " + std::to_wstring(timing.enrollmentCalls) +
+                                      L" · 특징 추출 " + std::to_wstring(timing.attemptCalls) +
+                                      L" · 정합 " + std::to_wstring(timing.compareCalls) +
+                                      L" · 재사용 " + std::to_wstring(timing.cacheHits));
+        html << L"</table>";
+    }
+    const auto metrics = evaluationMetrics(stats, timing);
+    if (options.recognition)
+    {
+        heading(L"인식 성능");
+        html << L"<div class=grid>";
+        for (size_t i = 0; i < 6; ++i)
         {
-            int y = 210 - g * 45;
-            html << L"<path d='M40 " << y << L" H340' stroke='#e4e8f2'/><text x='2' y='" << y + 4
-                 << L"'>"
-                 << (chart == 2 ? fmt(std::pow(10., g - 2), 2) + L"%"
-                                : std::to_wstring(g * 25) + L"%")
-                 << L"</text>";
+            if ((i == 0 && options.eer == ReportEer::SuccessfulOnly) ||
+                (i == 1 && options.eer == ReportEer::AllComparisons))
+                continue;
+            html << L"<div class=card><h3>" << escape(metrics[i].title) << L"</h3><div class=value>"
+                 << escape(metrics[i].value) << L"</div><small>" << escape(metrics[i].note)
+                 << L"</small></div>";
+            wordLine(metrics[i].title + L" · " + metrics[i].value + L" · " + metrics[i].note);
         }
-        if (chart == 0)
-        {
-            std::array<size_t, 20> genuine{}, impostor{};
-            for (double v : stats.genuineScores)
-                ++genuine[(std::min)(19, static_cast<int>(v * 20))];
-            for (double v : stats.impostorScores)
-                ++impostor[(std::min)(19, static_cast<int>(v * 20))];
-            for (int b = 0; b < 20; ++b)
-                for (int k = 0; k < 2; ++k)
-                {
-                    double count = k ? impostor[b] : genuine[b],
-                           total = k ? stats.impostorOk : stats.genuineOk;
-                    double h = total ? 180 * count / total : 0;
-                    html << L"<rect x='" << 40 + b * 15 + k * 7 << L"' y='" << fmt(210 - h)
-                         << L"' width='6' height='" << fmt(h) << L"' fill='"
-                         << (k ? L"#d5912b" : L"#1a8f76") << L"'/>";
-                }
-        }
-        else
-            for (int series = 0; series < (chart == 1 ? 2 : 1); ++series)
+        html << L"</div><p>판정 기준 " << fmt(threshold) << L"의 다른 지문 오인식 비율 (FMR): <b>" << pct(stats.fmr)
+             << L"</b> · 동일 지문 미인식 비율 (FNMR): <b>" << pct(stats.fnmr) << L"</b></p>";
+        wordLine(L"판정 기준 " + fmt(threshold) + L" · FMR " + pct(stats.fmr) +
+                 L" · FNMR " + pct(stats.fnmr));
+    }
+    for (const auto *group : {L"처리 실패", L"처리 시간", L"템플릿 · 메모리"})
+    {
+        const std::wstring name = group;
+        if ((name == L"처리 실패" && !options.failures) ||
+            (name == L"처리 시간" && !options.processing) ||
+            (name == L"템플릿 · 메모리" && !options.resources))
+            continue;
+        heading(name);
+        html << L"<table><tr><th>지표</th><th>측정값</th><th>기준</th></tr>";
+        for (const auto &m : metrics)
+            if (m.group == group)
             {
-                html << L"<polyline fill='none' stroke='"
-                     << (chart == 2 ? L"#5b4fe0"
-                         : series   ? L"#1a8f76"
-                                    : L"#d5912b")
-                     << L"' stroke-width='2' points='";
-                for (const auto &p : stats.curve)
-                {
-                    double x = chart == 1 ? (std::min)(1., p.threshold) : p.fmr,
-                           y = chart == 1 ? (series ? p.fnmr : p.fmr) : p.fnmr;
-                    if (!std::isfinite(x) || !std::isfinite(y))
-                        continue;
-                    if (chart == 2)
-                    {
-                        x = (std::log10((std::max)(1e-4, x)) + 4) / 4;
-                        y = (std::log10((std::max)(1e-4, y)) + 4) / 4;
-                    }
-                    html << fmt(40 + 300 * x) << L"," << fmt(210 - 180 * y) << L" ";
-                }
-                html << L"'/>";
+                html << L"<tr><td>" << escape(m.title) << L"</td><td><b>" << escape(m.value)
+                     << L"</b></td><td>" << escape(m.note) << L"</td></tr>";
+                wordLine(m.title + L" · " + m.value + L" · " + m.note);
             }
-        for (int tick = 0; tick <= 4; ++tick)
-            html << L"<text text-anchor='middle' x='" << 40 + 75 * tick << L"' y='229'>"
-                 << (chart == 2 ? fmt(std::pow(10., tick - 2), 2) + L"%" : fmt(tick / 4., 2))
-                 << L"</text>";
-        html << L"</svg>";
-        html << L"<small>"
-             << (chart == 0
-                     ? L"초록: 같은 손가락 · 주황: 다른 손가락. 각 집단의 성공 비교 수로 정규화."
-                 : chart == 1 ? L"가로: 판정 기준 · 주황: FMR · 초록: FNMR"
-                              : L"가로: FMR · 세로: FNMR. 0은 0.01% 눈금에 표시.")
-             << L"</small></section>";
+        html << L"</table>";
     }
-    html << L"</div><h2>04 비교별 결과</h2><p class=muted>원래 실행 목록 순서입니다. 처리 실패와 "
-            L"미완료 행도 보존합니다.</p><details><summary>전체 "
-         << plan.pairs.size()
-         << L"쌍 펼쳐 보기</summary><div class=scroll><table><tr><th>#</th><th>등록 "
-            L"파일</th><th>비교 파일</th><th>실제 관계</th><th>점수</th><th>판정 / 처리 "
-            L"상태</th><th>지연(ms)</th><th>작업</th><th>상세</th></tr>";
-    for (size_t i = 0; i < plan.pairs.size(); ++i)
+    std::array<std::wstring, 3> graphs;
+    const std::array<const wchar_t *, 3> graphFiles{
+        L"score-distribution.svg", L"threshold-errors.svg", L"det-curve.svg"};
+    const std::array<const wchar_t *, 3> graphTitles{
+        L"점수 분포", L"FMR(t) / FNMR(t)", L"DET · FMR / FNMR (로그축)"};
+    fs::path graphFolder;
+    if (options.charts)
     {
-        const auto &p = plan.pairs[i];
-        const auto &r = results[i];
-        std::wstring status;
-        switch (r.status)
+        heading(L"점수와 오류 곡선");
+        html << L"<div class=grid>";
+        for (int chart = 0; chart < 3; ++chart)
         {
-        case Status::Success:
-            status = r.score >= threshold ? (p.genuine ? L"동일 지문 인식" : L"다른 지문 오인식")
-                                          : (p.genuine ? L"동일 지문 미인식" : L"다른 지문 구분");
-            break;
-        case Status::EnrollmentError:
-            status = L"등록 실패";
-            break;
-        case Status::AttemptError:
-            status = L"특징 추출 실패";
-            break;
-        case Status::CompareError:
-            status = L"정합 실패";
-            break;
-        case Status::ImageError:
-            status = L"이미지 읽기 실패";
-            break;
-        case Status::Cancelled:
-            status = L"취소";
-            break;
-        default:
-            status = L"미완료";
+            const RECT frame{0, 0, 9525, 7144};
+            HDC emf = word ? CreateEnhMetaFileW(nullptr, nullptr, &frame, nullptr) : nullptr;
+            if (word && !emf)
+                throw std::runtime_error("Word 보고서 그래프를 만들지 못했습니다.");
+            auto closeEmf = [](HDC dc) { DeleteEnhMetaFile(CloseEnhMetaFile(dc)); };
+            std::unique_ptr<std::remove_pointer_t<HDC>, decltype(closeEmf)> recording(emf, closeEmf);
+            if (emf)
+            {
+                SetMapMode(emf, MM_ANISOTROPIC);
+                SetWindowExtEx(emf, 360, 270, nullptr);
+                SetViewportExtEx(emf, 360, 270, nullptr);
+                SetBkMode(emf, TRANSPARENT);
+                SetTextColor(emf, RGB(45, 55, 75));
+                SelectObject(emf, GetStockObject(DEFAULT_GUI_FONT));
+            }
+            auto graphText = [&](int x, int y, const std::wstring &label, bool centered = false)
+            {
+                if (!emf)
+                    return;
+                SetTextAlign(emf, (centered ? TA_CENTER : TA_LEFT) | TA_BASELINE);
+                TextOutW(emf, x, y, label.c_str(), static_cast<int>(label.size()));
+            };
+            std::wostringstream svg;
+            svg.imbue(std::locale::classic());
+            svg << L"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 360 270' role='img' "
+                   L"font-family='sans-serif' font-size='11'><title>"
+                << escape(graphTitles[chart]) << L"</title><rect width='360' height='270' fill='white'/>";
+            for (int g = 0; g <= 4; ++g)
+            {
+                int y = 210 - g * 45;
+                const auto label = chart == 2 ? fmt(std::pow(10., g - 2), 2) + L"%"
+                                              : std::to_wstring(g * 25) + L"%";
+                if (emf)
+                {
+                    RECT gridLine{40, y, 340, y + 1};
+                    FillRect(emf, &gridLine, static_cast<HBRUSH>(GetStockObject(LTGRAY_BRUSH)));
+                    graphText(2, y + 4, label);
+                }
+                svg << L"<path d='M40 " << y << L" H340' stroke='#e4e8f2'/><text x='2' y='" << y + 4
+                     << L"'>" << label << L"</text>";
+            }
+            if (chart == 0)
+            {
+                std::array<size_t, 20> genuine{}, impostor{};
+                for (double v : stats.genuineScores)
+                    ++genuine[(std::min)(19, static_cast<int>(v * 20))];
+                for (double v : stats.impostorScores)
+                    ++impostor[(std::min)(19, static_cast<int>(v * 20))];
+                for (int b = 0; b < 20; ++b)
+                    for (int k = 0; k < 2; ++k)
+                    {
+                        double count = k ? impostor[b] : genuine[b],
+                               total = k ? stats.impostorOk : stats.genuineOk;
+                        double h = total ? 180 * count / total : 0;
+                        const int x = 40 + b * 15 + k * 7;
+                        if (emf)
+                        {
+                            RECT bar{x, static_cast<LONG>(std::lround(210 - h)), x + 6, 210};
+                            const auto brush = CreateSolidBrush(k ? RGB(213, 145, 43) : RGB(26, 143, 118));
+                            FillRect(emf, &bar, brush);
+                            DeleteObject(brush);
+                        }
+                        svg << L"<rect x='" << x << L"' y='" << fmt(210 - h)
+                             << L"' width='6' height='" << fmt(h) << L"' fill='"
+                             << (k ? L"#d5912b" : L"#1a8f76") << L"'/>";
+                    }
+            }
+            else
+                for (int series = 0; series < (chart == 1 ? 2 : 1); ++series)
+                {
+                    std::vector<POINT> points;
+                    svg << L"<polyline fill='none' stroke='"
+                         << (chart == 2 ? L"#5b4fe0"
+                             : series   ? L"#1a8f76"
+                                        : L"#d5912b")
+                         << L"' stroke-width='2' points='";
+                    for (const auto &p : stats.curve)
+                    {
+                        double x = chart == 1 ? (std::min)(1., p.threshold) : p.fmr,
+                               y = chart == 1 ? (series ? p.fnmr : p.fmr) : p.fnmr;
+                        if (!std::isfinite(x) || !std::isfinite(y))
+                            continue;
+                        if (chart == 2)
+                        {
+                            x = (std::log10((std::max)(1e-4, x)) + 4) / 4;
+                            y = (std::log10((std::max)(1e-4, y)) + 4) / 4;
+                        }
+                        svg << fmt(40 + 300 * x) << L"," << fmt(210 - 180 * y) << L" ";
+                        if (emf)
+                            points.push_back({std::lround(40 + 300 * x), std::lround(210 - 180 * y)});
+                    }
+                    svg << L"'/>";
+                    if (points.size() >= 2)
+                    {
+                        auto pen = CreatePen(PS_SOLID, 2, chart == 2 ? RGB(91, 79, 224)
+                              : series ? RGB(26, 143, 118) : RGB(213, 145, 43));
+                        const auto previous = SelectObject(emf, pen);
+                        Polyline(emf, points.data(), static_cast<int>(points.size()));
+                        SelectObject(emf, previous);
+                        DeleteObject(pen);
+                    }
+                }
+            for (int tick = 0; tick <= 4; ++tick)
+            {
+                const auto label = chart == 2 ? fmt(std::pow(10., tick - 2), 2) + L"%"
+                                              : fmt(tick / 4., 2);
+                graphText(40 + 75 * tick, 229, label, true);
+                svg << L"<text text-anchor='middle' x='" << 40 + 75 * tick << L"' y='229'>"
+                     << label << L"</text>";
+            }
+            const auto *legend = chart == 0 ? L"유사도 · 초록: 본인 / 주황: 타인"
+                    : chart == 1 ? L"판정 기준 · 초록: FNMR / 주황: FMR"
+                                 : L"가로: FMR · 세로: FNMR";
+            graphText(40, 245, legend);
+            svg << L"<text x='40' y='245'>" << legend << L"</text>";
+            auto mark = [&](int x, int y, const wchar_t *color)
+            {
+                svg << L"<circle cx='" << x << L"' cy='" << y
+                    << L"' r='4' fill='" << color << L"'/>";
+                if (emf)
+                    Ellipse(emf, x - 4, y - 4, x + 4, y + 4);
+            };
+            if (chart == 1 && std::isfinite(stats.eerPoint.threshold))
+            {
+                const int x = std::lround(40 + 300 * (std::min)(1., stats.eerPoint.threshold));
+                svg << L"<path d='M" << x << L" 30 V210' stroke='#738099' stroke-dasharray='3 3'/>";
+                if (emf)
+                {
+                    MoveToEx(emf, x, 30, nullptr);
+                    LineTo(emf, x, 210);
+                }
+                for (double rate : {stats.eerPoint.fmr, stats.eerPoint.fnmr})
+                    mark(x, std::lround(210 - 180 * rate), L"#5b4fe0");
+                const std::wstring label = L"EER " + pct(stats.eer) + L" · t ≈ " +
+                                           fmt(stats.eerPoint.threshold, 6);
+                graphText(40, 262, label);
+                svg << L"<text x='40' y='262'>" << label << L"</text>";
+            }
+            if (chart == 2)
+            {
+                const Statistics::Point points[]{stats.eerPoint, stats.fmr100Point,
+                                                  stats.fmr1000Point};
+                const wchar_t *labels[]{L"EER", L"FMR100", L"FMR1000"};
+                auto scale = [](double rate) { return (std::log10((std::max)(1e-4, rate)) + 4) / 4; };
+                for (int i = 0; i < 3; ++i)
+                {
+                    if (!std::isfinite(points[i].threshold))
+                        continue;
+                    const int x = std::lround(40 + 300 * scale(points[i].fmr));
+                    const int y = std::lround(210 - 180 * scale(points[i].fnmr));
+                    mark(x, y, L"#5b4fe0");
+                    const int labelX = (std::min)(x + 7, 291);
+                    const int labelY = (std::clamp)(y - 6 - i * 12, 15, 204);
+                    graphText(labelX, labelY, labels[i]);
+                    svg << L"<text x='" << labelX << L"' y='" << labelY << L"'>"
+                        << labels[i] << L"</text>";
+                }
+            }
+            svg << L"</svg>";
+            graphs[chart] = svg.str();
+            html << L"<section class=panel><h3>" << graphTitles[chart] << L"</h3>" << graphs[chart];
+            wordLine(graphTitles[chart], true);
+            if (emf)
+            {
+                const auto image = CloseEnhMetaFile(recording.release());
+                const UINT size = GetEnhMetaFileBits(image, 0, nullptr);
+                std::vector<BYTE> bytes(size);
+                const UINT read = size ? GetEnhMetaFileBits(image, size, bytes.data()) : 0;
+                DeleteEnhMetaFile(image);
+                if (!read || read != size)
+                    throw std::runtime_error("Word 보고서 그래프를 인코딩하지 못했습니다.");
+                rtf << "{\\pict\\emfblip\\picw9525\\pich7144\\picwgoal5400\\pichgoal4050\n";
+                constexpr char hex[] = "0123456789abcdef";
+                for (BYTE byte : bytes)
+                    rtf << hex[byte >> 4] << hex[byte & 15];
+                rtf << "}\\par\n";
+            }
+            html << L"<small>"
+                 << (chart == 0
+                         ? L"초록: 같은 손가락 · 주황: 다른 손가락. 각 집단의 성공 비교 수로 정규화."
+                     : chart == 1 ? L"가로: 판정 기준 · 주황: FMR · 초록: FNMR"
+                                  : L"가로: FMR · 세로: FNMR. 0은 0.01% 눈금에 표시.")
+                 << L"</small></section>";
         }
-        html << L"<tr><td>" << i + 1 << L"</td><td>"
-             << escape(plan.images.at(p.registration).path.filename().wstring()) << L"</td><td>"
-             << escape(plan.images.at(p.attempt).path.filename().wstring()) << L"</td><td>"
-             << (p.genuine ? L"같은 손가락" : L"다른 손가락") << L"</td><td>"
-             << (r.status == Status::Success ? fmt(r.score) : L"—") << L"</td><td>" << status
-             << L"</td><td>"
-             << (r.status == Status::Pending || r.status == Status::Cancelled ? L"—"
-                                                                              : fmt(r.milliseconds))
-             << L"</td><td>" << r.worker << L"</td><td>" << escape(r.detail) << L"</td></tr>";
+        html << L"</div>";
     }
-    html << L"</table></div></details><footer><h3>해석과 측정 범위</h3><p>선택한 DB와 비교 "
+    if (options.comparisons)
+    {
+        heading(L"비교별 결과");
+        html << L"<p class=muted>원래 실행 목록 순서입니다. 처리 실패와 "
+                L"미완료 행도 보존합니다.</p><details open><summary>전체 "
+             << plan.pairs.size()
+             << L"쌍 펼쳐 보기</summary><div class=scroll><table><tr><th>#</th><th>등록 "
+                L"파일</th><th>비교 파일</th><th>실제 관계</th><th>점수</th><th>판정 / 처리 "
+                L"상태</th><th>지연(ms)</th><th>작업</th><th>상세</th></tr>";
+        for (size_t i = 0; i < plan.pairs.size(); ++i)
+        {
+            const auto &p = plan.pairs[i];
+            const auto &r = results[i];
+            std::wstring status;
+            switch (r.status)
+            {
+            case Status::Success:
+                status = r.score >= threshold ? (p.genuine ? L"동일 지문 인식" : L"다른 지문 오인식")
+                                              : (p.genuine ? L"동일 지문 미인식" : L"다른 지문 구분");
+                break;
+            case Status::EnrollmentError:
+                status = L"등록 실패";
+                break;
+            case Status::AttemptError:
+                status = L"특징 추출 실패";
+                break;
+            case Status::CompareError:
+                status = L"정합 실패";
+                break;
+            case Status::ImageError:
+                status = L"이미지 읽기 실패";
+                break;
+            case Status::Cancelled:
+                status = L"취소";
+                break;
+            default:
+                status = L"미완료";
+            }
+            html << L"<tr><td>" << i + 1 << L"</td><td>"
+                 << escape(plan.images.at(p.registration).path.filename().wstring()) << L"</td><td>"
+                 << escape(plan.images.at(p.attempt).path.filename().wstring()) << L"</td><td>"
+                 << (p.genuine ? L"같은 손가락" : L"다른 손가락") << L"</td><td>"
+                 << (r.status == Status::Success ? fmt(r.score) : L"—") << L"</td><td>" << status
+                 << L"</td><td>"
+                 << (r.status == Status::Pending || r.status == Status::Cancelled ? L"—"
+                                                                                  : fmt(r.milliseconds))
+                 << L"</td><td>" << r.worker << L"</td><td>" << escape(r.detail) << L"</td></tr>";
+            wordLine(std::to_wstring(i + 1) + L". " +
+                     plan.images.at(p.registration).path.filename().wstring() + L" / " +
+                     plan.images.at(p.attempt).path.filename().wstring() + L" · " +
+                     (p.genuine ? L"같은 손가락" : L"다른 손가락") + L" · " + status + L" · " +
+                     (r.status == Status::Success ? fmt(r.score) : L"—") + L" · " +
+                     (r.status == Status::Pending || r.status == Status::Cancelled
+                          ? L"—" : fmt(r.milliseconds) + L" ms") +
+                     L" · 작업 " + std::to_wstring(r.worker) + L" · " + r.detail);
+        }
+        html << L"</table></div></details>";
+    }
+    html << L"<footer><h3>해석과 측정 범위</h3><p>선택한 DB와 비교 "
             L"목록에서 얻은 결과이며 공식 FVC 순위와 직접 비교할 수 없습니다. 정합 점수는 동일인 "
             L"확률이 아닙니다. 본인 비교는 같은 손가락의 다른 촬영본, 타인 비교는 다른 "
             L"손가락입니다.</p><p>FNMR은 본인 비교의 처리 실패를 포함합니다. EER은 관측 임계값의 "
@@ -1496,20 +1747,36 @@ void saveEvaluationReport(const Plan &plan, const std::vector<Result> &results,
             L"포함할 수 있습니다. 정합 시간은 특징 추출을 제외한 API 호출 시간이며 병렬 실행 "
             L"시간의 합과 전체 경과 시간은 다릅니다. RAM은 DLL 단독이 아닌 앱·모델·캐시 전체의 "
             L"Working Set을 5ms 간격으로 관측한 값입니다.</p></footer></main></html>";
-    const auto wide = html.str();
-    int bytes = WideCharToMultiByte(CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()), nullptr,
-                                    0, nullptr, nullptr);
-    if (!bytes)
-        throw std::runtime_error("보고서 인코딩에 실패했습니다.");
-    std::string utf8(bytes, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()), utf8.data(), bytes,
-                        nullptr, nullptr);
-    std::ofstream out(file, std::ios::binary);
-    out.write(utf8.data(), static_cast<std::streamsize>(utf8.size()));
-    out.close();
-    if (!out)
-        throw std::runtime_error(
-            "보고서를 저장하지 못했습니다. 저장 위치와 쓰기 권한을 확인하세요.");
+    wordLine(L"해석과 측정 범위", true);
+    wordLine(L"선택한 DB와 비교 목록의 결과입니다. 정합 점수는 동일인 확률이 아닙니다.");
+    if (options.recognition)
+        wordLine(L"EER은 모든 비교를, EER*은 성공한 비교만 집계합니다.");
+    rtf << '}';
+    try
+    {
+        if (options.charts)
+        {
+            const auto base = file.filename().wstring() + L"-graphs";
+            auto candidate = file.parent_path() / base;
+            for (unsigned suffix = 2; !fs::create_directory(candidate); ++suffix)
+                candidate = file.parent_path() / (base + L"-" + std::to_wstring(suffix));
+            graphFolder = std::move(candidate);
+            for (size_t i = 0; i < graphs.size(); ++i)
+                writeFile(graphFolder / graphFiles[i], utf8(graphs[i]));
+        }
+        writeFile(file, word ? rtf.str() : utf8(html.str()));
+    }
+    catch (...)
+    {
+        if (!graphFolder.empty())
+        {
+            std::error_code ignored;
+            for (const auto *name : graphFiles)
+                fs::remove(graphFolder / name, ignored);
+            fs::remove(graphFolder, ignored);
+        }
+        throw;
+    }
 }
 
 } // namespace demo

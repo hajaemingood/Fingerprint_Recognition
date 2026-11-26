@@ -100,13 +100,17 @@ struct Statistics
     double eer = std::numeric_limits<double>::quiet_NaN();
     double eerWithoutFailures = eer, fmr100 = eer, fmr1000 = eer, zeroFmr = eer, zeroFnmr = eer;
     size_t genuineRejected = 0, impostorRejected = 0;
+    size_t genuineAttempted = 0, impostorAttempted = 0;
     double matchMean = eer, genuineMatchMean = eer, impostorMatchMean = eer;
     std::vector<double> genuineScores, impostorScores;
     // threshold, FMR, FNMR; nonfinite values denote a missing comparison class.
     struct Point
     {
-        double threshold, fmr, fnmr;
+        double threshold = std::numeric_limits<double>::quiet_NaN();
+        double fmr = threshold, fnmr = threshold;
     };
+    Point eerPoint, eerWithoutFailuresPoint, fmr100Point, fmr1000Point, zeroFmrPoint, zeroFnmrPoint;
+    bool provisional = true;
     std::vector<Point> curve;
 };
 std::wstring recognitionBackendLabel(const fs::path &algorithm);
@@ -132,9 +136,22 @@ struct EvaluationMetric
 };
 std::vector<EvaluationMetric> evaluationMetrics(const Statistics &statistics,
                                                 const EvaluationTiming &timing);
+enum class ReportEer { Both, AllComparisons, SuccessfulOnly };
+struct ReportOptions
+{
+    bool experiment = true;
+    bool recognition = true;
+    bool failures = true;
+    bool processing = true;
+    bool resources = true;
+    bool charts = true;
+    bool comparisons = true;
+    ReportEer eer = ReportEer::Both;
+};
 void saveEvaluationReport(const Plan &plan, const std::vector<Result> &results,
                           const EvaluationTiming &timing, double threshold,
-                          double elapsedMilliseconds, bool interrupted, const fs::path &file);
+                          double elapsedMilliseconds, bool interrupted, const fs::path &file,
+                          const ReportOptions &options = {});
 EvaluationTiming evaluate(const Plan &plan, std::atomic<bool> &cancel,
                           const std::function<void(size_t, const Result &)> &onResult,
                           const std::function<void(size_t, int)> &onStarted = {});

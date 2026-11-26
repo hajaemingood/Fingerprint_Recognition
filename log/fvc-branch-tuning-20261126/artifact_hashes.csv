@@ -1,0 +1,6 @@
+"path","sha256"
+"build\fvc-branch-tuning-20261126\A-01.pt","76de7fbc8aed27b6119e8771c08dffc6b581261306e241a437067425d2acdf3f"
+"build\fvc-branch-tuning-20261126\native\IndustryAlgorithm.dll","ecc125c080461b70eeea716016bd40a0d6138ebbcdbcca915eae5f8f6394f6cf"
+"build\fvc-branch-tuning-20261126\native\deepprint_texminu_512.onnx","ae2349b83a279cc59ee4b202447a736eb5c1f89940ec5e0d79d33a8aa017ae20"
+"build\evaluator\IndustryAlgorithm.dll","22f8f51a4ac48851621b7a924a909333d8c6fae3728d840e3cb78e0443d22ef9"
+"build\evaluator\deepprint_texminu_512.onnx","fefd22f072db080fab8afea2050069ce04c63fa43a7ecbb1613bb65050d59fcc"
