@@ -5,30 +5,11 @@
       "name": "Fingerprint evaluation (GDB)",
       "type": "cppdbg",
       "request": "launch",
-      "program": "${workspaceFolder}/build/evaluator/fingerprint_compare.exe",
+      "program": "${workspaceFolder}/dist/fingerprint_compare.exe",
       "cwd": "${workspaceFolder}",
       "MIMode": "gdb",
       "miDebuggerPath": "C:\\msys64\\ucrt64\\bin\\gdb.exe",
       "preLaunchTask": "Build DeepPrint and evaluation app"
-    },
-    {
-      "name": "C/C++ Runner: Debug Session",
-      "type": "cppdbg",
-      "request": "launch",
-      "args": [],
-      "stopAtEntry": false,
-      "externalConsole": true,
-      "cwd": "c:/Users/hajaemin/Desktop/Advanced_OOP",
-      "program": "c:/Users/hajaemin/Desktop/Advanced_OOP/build/Debug/outDebug",
-      "MIMode": "gdb",
-      "miDebuggerPath": "gdb",
-      "setupCommands": [
-        {
-          "description": "Enable pretty-printing for gdb",
-          "text": "-enable-pretty-printing",
-          "ignoreFailures": true
-        }
-      ]
     }
   ]
 }

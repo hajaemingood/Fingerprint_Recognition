@@ -1,5 +1,8 @@
 /build/
 /dist/
+/models/release/*.onnx
+/models/release/deepprint_texminu_512.json
+/experiments/
 /.vs/
 /CMakeUserPresets.json
 /archive/histogram/builds/

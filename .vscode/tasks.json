@@ -2,32 +2,19 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Configure DeepPrint and evaluation app",
-      "type": "process",
-      "command": "powershell",
-      "args": [
-        "-NoProfile",
-        "-Command",
-        "$cmake = Get-Command cmake.exe -ErrorAction SilentlyContinue; $cmakePath = if ($cmake) { $cmake.Source } else { 'build/dependencies/cmake/bin/cmake.exe' }; & $cmakePath -S . -B build/evaluator -G 'MinGW Makefiles' -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=C:/msys64/ucrt64/bin/g++.exe -DCMAKE_MAKE_PROGRAM=C:/msys64/ucrt64/bin/mingw32-make.exe '-DFINGERPRINT_TEXTURE_WEIGHT:STRING=0.22' -DFINGERPRINT_DEEPPRINT=ON -DFINGERPRINT_FVC2004_ROI=ON -DFINGERPRINT_BUILD_GUI=ON -DFINGERPRINT_DEEPPRINT_REFERENCE_DIR=tests/fixtures/deepprint; exit $LASTEXITCODE"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
       "label": "Build DeepPrint and evaluation app",
       "type": "process",
       "command": "powershell",
       "args": [
         "-NoProfile",
-        "-Command",
-        "$cmake = Get-Command cmake.exe -ErrorAction SilentlyContinue; $cmakePath = if ($cmake) { $cmake.Source } else { 'build/dependencies/cmake/bin/cmake.exe' }; & $cmakePath --build build/evaluator --config Release --parallel; exit $LASTEXITCODE"
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/tools/build-release.ps1"
       ],
       "options": {
         "cwd": "${workspaceFolder}"
       },
-      "dependsOn": "Configure DeepPrint and evaluation app",
       "problemMatcher": [
         "$gcc"
       ],

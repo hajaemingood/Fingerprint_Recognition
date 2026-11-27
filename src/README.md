@@ -15,7 +15,7 @@
 | Evaluation | `fingerprint_compare.exe`, [GUI](../app/comparison_window.cpp), [비교·통계·보고서](../app/fingerprint_image.cpp) | x64 DLL + DB + 비교 규칙 → 쌍별 결과, 지표, HTML/RTF와 SVG | Win32, WIC, 공개 KISA 함수 |
 | 일괄 평가 | `augment_fvc`, `evaluate_noise`, `tune_weights`, [영상 증강](../tools/noise/), [평가 도구](../tools/evaluation/) | 원본·변형·저장 템플릿 → 조건별 성능과 가중치 비교 | [FVC/TIFF 공통 코드](../tools/fvc/), [검증 지표](../tools/evaluation/verification_metrics.cpp) |
 
-[include](../include/)는 ABI와 센서 규격, [src](./)는 DLL 및 [증강 조건 데이터](experiments/fvc_augmentation.json), [app](../app/)은 GUI, [tools](../tools/)는 오프라인 실행 파일을 담는다. [data/fvc](../data/fvc/)는 실험 원본, [tests](../tests/)와 [fixtures](../tests/fixtures/deepprint/)는 검증 코드와 독립 기준 벡터다. [log](../log/)는 분할·시험 성적, [reports](../reports/)는 생성된 보고서, [reference](../reference/)는 과제·원본 자료, [archive](../archive/)는 이전 산출물이다. 로컬 `build/`에는 모델·실행 파일·실험 중간 결과를 둔다. [CMakeLists.txt](../CMakeLists.txt)에서 GUI, DeepPrint DLL, 연구 도구를 별도 타깃으로 구성하며 [프리셋](../CMakePresets.json)이 빌드 구성을 정한다.
+[include](../include/)는 ABI와 센서 규격, [src](./)는 DLL 및 [증강 조건 데이터](experiments/fvc_augmentation.json), [app](../app/)은 GUI, [tools](../tools/)는 오프라인 실행 파일을 담는다. [data/fvc](../data/fvc/)는 실험 원본, [tests](../tests/)와 [fixtures](../tests/fixtures/deepprint/)는 검증 코드와 독립 기준 벡터다. [log](../log/)는 분할·시험 성적, [reports](../reports/)는 생성된 보고서, [reference](../reference/)는 과제·원본 자료, [archive](../archive/)는 이전 산출물이다. 기본 빌드와 의존성은 `build/`, 배포 파일은 `dist/`, 발표용 모델은 `models/release/`, 실험 자료는 `experiments/`에 둔다. [CMakeLists.txt](../CMakeLists.txt)에서 GUI, DeepPrint DLL, 연구 도구를 별도 타깃으로 구성하며 [프리셋](../CMakePresets.json)이 빌드 구성을 정한다.
 
 ```mermaid
 flowchart LR
@@ -744,7 +744,7 @@ FVC2002 양방향 필터의 σ=12와 σ=30은 5개 확인 ID에서 모두 EER 4.
 
 초기 가중치 탐색에서 기존 연결 벡터 기준과 22:78을 비교한 개발 macro EER은 **6.37% → 5.16%**, 확인 macro EER은 **8.24% → 7.86%**였다. 이는 당시의 전처리와 5/5 ID 분할을 사용한 평균이다. [가중치 탐색 조건과 결과](../log/weight-tuning-20261124-164133/summary.txt)
 
-다음 표는 **C++ 분기 학습 실행**의 같은 원본·같은 분할에서 학습 효과와 정합 비율을 분리한 값이다. 각 칸은 FVC2000 / FVC2002 / FVC2004 순서의 EER이다. 최종 확인은 DB당 **276쌍(본인 84, 타인 192)**, 전체는 **3,160쌍**이다. C++ `branches`는 기존 [ID 분할](../log/fvc-branch-tuning-20261126/split.csv)을 재사용했다. [C++ 후보 선택](../log/cpp-port-verification/branch-selection.csv) · [선택 후보의 전체 KISA 측정](../log/cpp-port-verification/branch-kisa-parity.csv) · [분기 실험 4조건 로그(이전 실행)](../log/fvc-branch-tuning-20261126/evaluation.csv). 현재 C++ 실행의 4조건 원자료는 로컬 `build/cpp-research/branches-final/evaluation.csv`에 생성됐다.
+다음 표는 **C++ 분기 학습 실행**의 같은 원본·같은 분할에서 학습 효과와 정합 비율을 분리한 값이다. 각 칸은 FVC2000 / FVC2002 / FVC2004 순서의 EER이다. 최종 확인은 DB당 **276쌍(본인 84, 타인 192)**, 전체는 **3,160쌍**이다. C++ `branches`는 기존 [ID 분할](../log/fvc-branch-tuning-20261126/split.csv)을 재사용했다. [C++ 후보 선택](../log/cpp-port-verification/branch-selection.csv) · [선택 후보의 전체 KISA 측정](../log/cpp-port-verification/branch-kisa-parity.csv) · [분기 실험 4조건 로그(이전 실행)](../log/fvc-branch-tuning-20261126/evaluation.csv). 현재 C++ 실행의 4조건 원자료는 로컬 `experiments/cpp-research/branches-final/evaluation.csv`에 생성됐다.
 
 | 조합 | 전체 원본 EER | 보류 ID 원본 EER |
 |---|---|---|

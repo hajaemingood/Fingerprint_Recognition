@@ -1,7 +1,7 @@
 # Run explicitly from the repository root to install the two native CPU libraries.
 cmake_minimum_required(VERSION 3.18)
 get_filename_component(root "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
-set(destination "${root}/build/dependencies/torch-native")
+set(destination "${root}/experiments/dependencies/torch-native")
 file(MAKE_DIRECTORY "${destination}")
 function(install_native package version sha256)
     set(archive "${destination}/${package}.${version}.nupkg")

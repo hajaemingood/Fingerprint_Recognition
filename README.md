@@ -6,35 +6,15 @@
 
 ## 최종 시연 구성
 
-현재 `progess`의 발표용 패키지는 `build/cpp-validation/presentation/`에 있습니다. 이 PC에서 저장소 루트의 PowerShell로 실행한 뒤 **01 실험 설정 → 알고리즘 DLL 선택…**에서 같은 폴더의 `IndustryAlgorithm.dll`을 지정합니다.
+저장소 루트에서 `.\dist\fingerprint_compare.exe`를 실행한 뒤 **01 실험 설정 → 알고리즘 DLL 선택…**에서 같은 폴더의 `IndustryAlgorithm.dll`을 선택합니다. 외부 Windows x64 KISA 평가기에는 `dist/`의 `IndustryAlgorithm.dll`과 `onnxruntime.dll` 두 파일을 함께 전달합니다.
+
+VS Code에서 **Ctrl+Shift+B**를 누르면 Release 빌드와 CTest 통과 후 `dist/`를 갱신합니다. **F5**는 같은 작업 후 해당 GUI를 실행합니다. PowerShell에서는 저장소 루트에서 아래 명령을 사용합니다. 빌드 전에는 실행 중인 발표 GUI를 닫습니다.
 
 ```powershell
-.\build\cpp-validation\presentation\fingerprint_compare.exe
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/build-release.ps1
 ```
 
-코드를 수정한 뒤에는 아래 명령으로 DLL과 GUI를 다시 빌드해 발표 폴더에 반영합니다. 이 명령은 이 PC에 구성된 `build/cpp-validation`의 CMake 캐시를 사용합니다. 설치할 파일을 사용 중이면 발표용 GUI를 먼저 닫습니다. 새 클론에서는 [DeepPrint 최초 빌드 준비](#deepprint-최초-빌드-준비)부터 진행합니다.
-
-```powershell
-$cmake = '.\build\dependencies\cmake\bin\cmake.exe'
-& $cmake --build build/cpp-validation --target IndustryAlgorithm fingerprint_compare --parallel 4
-if ($LASTEXITCODE -ne 0) { throw 'DLL 또는 GUI 빌드 실패' }
-& $cmake --install build/cpp-validation --prefix build/cpp-validation/presentation
-if ($LASTEXITCODE -ne 0) { throw '발표 폴더 복사 실패' }
-.\build\cpp-validation\presentation\fingerprint_compare.exe
-```
-
-**다른 Windows x64 KISA 평가 시스템에 전달할 파일은 두 개입니다.** 다음 명령으로 `build/cpp-validation/algorithm/`에 내보낸 뒤 두 DLL을 같은 폴더에 둡니다. 상대 평가 시스템에서 `IndustryAlgorithm.dll`을 선택합니다.
-
-```powershell
-& $cmake --install build/cpp-validation --component KisaAlgorithm --prefix build/cpp-validation/algorithm
-```
-
-| 파일 | 역할 |
-| --- | --- |
-| `IndustryAlgorithm.dll` | KISA C ABI와 DeepPrint ONNX 모델(그래프·학습 가중치)을 포함한 지문 비교 DLL |
-| `onnxruntime.dll` | Windows x64 CPU 추론 런타임 |
-
-우리 GUI로 시연할 때는 `presentation/`에 함께 설치된 `fingerprint_compare.exe`를 실행하고 평가할 DB를 선택합니다. 모델을 갱신할 때는 새 ONNX를 `FINGERPRINT_DEEPPRINT_MODEL`로 지정해 DLL을 다시 빌드하고 설치합니다.
+2026-11-26 발표 DLL에 내장된 `models/release/deepprint_texminu_512.onnx`의 SHA-256은 `a2b34f4d8c588288fb4b6579ca35db18b988cea88b26372d7e60bef11f817ffb`입니다. 질감 가중치는 0.22, FVC2004 ROI는 ON입니다. 새 PC에서는 [DeepPrint 최초 빌드 준비](#deepprint-최초-빌드-준비)를 먼저 진행합니다.
 
 ### 모델에서 평가까지
 
@@ -69,14 +49,14 @@ C++에서 A(두 투영층), B(질감 마지막 Inception C와 투영층), C(특�
 
 ## 새 PC에서 처음부터 실행 (Visual Studio 2022·2026 공통)
 
-`build/`의 DLL·모델·런타임은 Git에 포함되지 않으므로, 클론 직후에는 아래 절차로 한 번 준비합니다.
+실행 패키지·모델·런타임은 Git에 포함되지 않으므로, 클론 직후에는 아래 절차로 한 번 준비합니다.
 `ui-*`, `deepprint-release` 프리셋은 Visual Studio 버전 이름에 묶이지 않는 Ninja + MSVC 구성입니다.
 기존 `vs2022-*` 프리셋은 VS 2022 전용으로 그대로 유지합니다.
 
 **필요한 것:** Visual Studio 2022 이상의 **C++를 사용한 데스크톱 개발** 워크로드(Windows용 C++ CMake 도구 포함), CMake 3.20 이상, Ninja
 
 1. **모델과 ONNX Runtime 준비** — x64 Developer PowerShell에서 저장소 루트로 이동해 [DeepPrint 최초 빌드 준비](#deepprint-최초-빌드-준비)의 명령을 그대로 실행합니다.
-   완료되면 `build/models/deepprint_texminu_512.onnx`, `build/dependencies/onnxruntime/`가 생깁니다.
+   완료되면 `models/release/deepprint_texminu_512.onnx`, `build/dependencies/onnxruntime/`가 생깁니다.
 2. **DLL과 UI 빌드** — Visual Studio에서 **로컬 폴더 열기**로 저장소 루트를 열고, 상단 구성에서 `deepprint-release`를 선택한 뒤
    **빌드 → 모두 빌드**를 실행합니다. 명령줄에서는 아래처럼 x64 개발자 셸에서 실행합니다.
 
@@ -86,10 +66,11 @@ C++에서 A(두 투영층), B(질감 마지막 Inception C와 투영층), C(특�
    cd <저장소 경로>
    cmake --preset deepprint-release
    cmake --build --preset deepprint-release
-   ctest --preset deepprint-release   # 100% tests passed 확인
+   ctest --preset deepprint-release   # 통과 후 설치
+   cmake --install build/deepprint-release --prefix dist
    ```
 
-3. **실행** — `build/deepprint-release/`에 `fingerprint_compare.exe`, `IndustryAlgorithm.dll`,
+3. **실행** — `dist/`에 `fingerprint_compare.exe`, `IndustryAlgorithm.dll`,
    `onnxruntime.dll`이 함께 생성됩니다. 앱을 실행하고 **알고리즘 DLL 선택**에서
    같은 폴더의 `IndustryAlgorithm.dll`을 선택합니다.
 
@@ -140,7 +121,7 @@ Visual Studio에서 `vs2022-debug`를 선택하고 시작 항목을 `fingerprint
 출력 위치는 `build/vs2022-deepprint/Debug/`입니다.
 
 실행 폴더에는 `fingerprint_compare.exe`, `IndustryAlgorithm.dll`, `onnxruntime.dll`이 함께 있어야 합니다.
-빌드 시 `build/models/`의 ONNX를 알고리즘 DLL 리소스에 포함하고, `build/dependencies/onnxruntime/`의 런타임 DLL을 실행 폴더로 복사합니다. 새 PC에서 저장소를 내려받을 경우 이 파일들은
+빌드 시 `models/release/`의 ONNX를 알고리즘 DLL 리소스에 포함하고, `build/dependencies/onnxruntime/`의 런타임 DLL을 실행 폴더로 복사합니다. 새 PC에서 저장소를 내려받을 경우 이 파일들은
 Git에 포함되어 있지 않으므로 아래 최초 빌드 준비 절차를 먼저 수행해야 합니다.
 모델 기준 벡터는 `tests/fixtures/deepprint/`에 저장하고 CTest로 실제 C++ 추론과 대조합니다.
 
@@ -264,7 +245,10 @@ Advanced_OOP/
 │       ├── builds/                   # 구형 Release·noise-baseline 빌드 (Git 제외)
 │       └── runs/                     # run_1 및 이전 히스토그램 평가 기록
 ├── log/                              # 가중치 실험 설정, 데이터 분할, 결과
-└── build/                            # EXE, DLL, 모델, 증강과 평가 결과 (Git 제외)
+├── dist/                             # 실행·배포용 GUI와 DLL 두 개
+├── models/release/                   # 발표 DLL을 재빌드하는 ONNX
+├── experiments/                      # 연구 빌드, 모델, 학습·평가 결과
+└── build/                            # 기본 빌드 release/ 및 dependencies/
 ```
 
 ## 팀별 작업 범위
@@ -282,7 +266,7 @@ Advanced_OOP/
 
 ## 구형 빌드와 평가 기록
 
-발표용 실행 파일과 DLL은 `build/cpp-validation/presentation/`에 함께 있습니다. `build/evaluator/`는 VS Code 기본 빌드 및 기존 기준 모델을 사용한 비교 실험 경로입니다. 로컬의 이전 빌드는 `build/_archive/`에, 교체 전 DLL은 `build/rollback/`에 보관합니다. `build/`는 Git에서 제외하며 최종 수치와 비교 조건은 저장소에서 확인할 수 있습니다. [최종 검증 CSV](log/cpp-port-verification/) · [전체 실험 기록](log/)
+발표 패키지는 `dist/`, 기본 MinGW 빌드는 `build/release/`를 사용합니다. 기본 빌드가 사용하는 로컬 도구와 SDK는 `build/dependencies/cmake/`와 `build/dependencies/onnxruntime/`에 있습니다. 선택한 연구 도구는 `experiments/tools-build/`에서 별도로 빌드합니다. 이전 실험의 모델, 비교 조건 및 결과는 [실험 기록](log/)에서 확인할 수 있습니다.
 
 구형 히스토그램 DLL과 평가 기록의 위치·해시는 보관 로그에 기록되어 있습니다. [보관 로그](archive/archive-log.csv)
 
@@ -306,7 +290,7 @@ DLL의 `iType` 매핑은 FVC용 1·2·3과 KISA 안내서의 센서용 5·7·8·
 
 ### DeepPrint DLL과 평가 앱 빌드
 
-Visual Studio에서는 위의 [새 PC에서 처음부터 실행](#새-pc에서-처음부터-실행-visual-studio-20222026-공통) 절차와 `deepprint-release` 프리셋을 사용합니다. 아래는 VS Code와 MSYS2 UCRT64의 `g++`, `mingw32-make`, CMake·CTest 3.20 이상을 사용하는 방법입니다. DeepPrint 빌드에는 `build/models/deepprint_texminu_512.onnx`와 `build/dependencies/onnxruntime/`가 필요합니다. [DeepPrint 최초 빌드 준비](#deepprint-최초-빌드-준비)
+Visual Studio에서는 위의 [새 PC에서 처음부터 실행](#새-pc에서-처음부터-실행-visual-studio-20222026-공통) 절차와 `deepprint-release` 프리셋을 사용합니다. 아래는 VS Code와 MSYS2 UCRT64의 `g++`, `mingw32-make`, CMake·CTest 3.20 이상을 사용하는 방법입니다. DeepPrint 빌드에는 `models/release/deepprint_texminu_512.onnx`와 `build/dependencies/onnxruntime/`가 필요합니다. [DeepPrint 최초 빌드 준비](#deepprint-최초-빌드-준비)
 
 평가 앱이 열려 있다면 빌드 전에 창을 닫습니다. **VS Code**에서 저장소 폴더를 열고 `Ctrl+Shift+B`를 눌러 **Build DeepPrint and evaluation app**을 실행합니다.
 
@@ -319,19 +303,7 @@ $cmake = if ($installedCmake) { $installedCmake.Source } else {
 }
 ```
 
-같은 터미널에서 DLL과 평가 앱을 빌드합니다.
-
-```powershell
-& $cmake -S . -B build/evaluator -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release `
-  -DCMAKE_CXX_COMPILER=C:/msys64/ucrt64/bin/g++.exe `
-  -DCMAKE_MAKE_PROGRAM=C:/msys64/ucrt64/bin/mingw32-make.exe `
-  -DFINGERPRINT_BUILD_GUI=ON -DFINGERPRINT_DEEPPRINT=ON -DFINGERPRINT_FVC2004_ROI=ON `
-  '-DFINGERPRINT_TEXTURE_WEIGHT:STRING=0.22' `
-  -DFINGERPRINT_DEEPPRINT_REFERENCE_DIR=tests/fixtures/deepprint
-& $cmake --build build/evaluator --parallel 4
-```
-
-이 VS Code·MinGW 구성의 산출물은 `build/evaluator/`에 생성됩니다. 발표용 폴더를 갱신할 때는 [최종 시연 구성](#최종-시연-구성)의 `build/cpp-validation` 빌드·설치 명령을 사용합니다.
+MinGW 빌드는 [최종 시연 구성](#최종-시연-구성)의 PowerShell 명령으로 실행합니다. GUI와 두 DLL은 `dist/`, 명령줄 도구는 `build/release/`에 생성됩니다.
 
 | 산출물 | 역할 |
 | --- | --- |
@@ -363,15 +335,16 @@ $cmake = if ($installedCmake) { $installedCmake.Source } else {
 위의 PowerShell 빌드 명령을 실행한 터미널에서 CTest를 실행합니다.
 
 ```powershell
-& (Join-Path (Split-Path -Parent $cmake) 'ctest.exe') --test-dir build/evaluator --output-on-failure
+& (Join-Path (Split-Path -Parent $cmake) 'ctest.exe') --test-dir build/release --output-on-failure
 ```
 
 Visual Studio 프리셋으로 빌드했다면 `ctest --preset deepprint-release`를 실행합니다.
 
-`noise_and_metrics`는 증강과 평가 지표를 검사하고, `deepprint_reference`는 독립 기준 벡터와 C++ 추론 결과를 대조합니다. 연구 도구를 켜면 `research_metrics_and_onnx`도 등록됩니다. 현재 발표용 빌드 구성에서 세 검사를 실행하려면 아래 명령을 사용합니다.
+`noise_and_metrics`는 증강과 평가 지표를 검사하고, `deepprint_reference`는 독립 기준 벡터와 C++ 추론 결과를 대조합니다. 연구 도구를 켜면 `research_metrics_and_onnx`도 등록됩니다. 연구 구성의 테스트 실행 파일까지 빌드한 뒤 검사하려면 아래 명령을 사용합니다.
 
 ```powershell
-.\build\dependencies\cmake\bin\ctest.exe --test-dir build/cpp-validation --output-on-failure
+cmake --build experiments/tools-build
+ctest --test-dir experiments/tools-build --output-on-failure
 ```
 
 ## DeepPrint DLL과 노이즈 평가
@@ -383,25 +356,18 @@ DeepPrint DLL은 FVC 회색조 픽셀을 흰색 패딩과 안티앨리어싱 리
 저장소 루트의 x64 Developer PowerShell에서 실행합니다. 체크포인트를 읽어 ONNX를 생성하는 프로그램은 C++17 실행 파일 `export_deepprint`입니다. 아래 명령은 새 클론 기준입니다.
 
 ```powershell
-New-Item -ItemType Directory -Force build/dependencies | Out-Null
-curl.exe -fL 'https://drive.usercontent.google.com/download?id=1R9v73hFBuy0iihz7v8eDlBcGrMDmQ9TH&export=download&confirm=t' -o build/dependencies/best_model.pyt
+New-Item -ItemType Directory -Force build/dependencies,experiments/dependencies,models/release | Out-Null
+curl.exe -fL 'https://drive.usercontent.google.com/download?id=1R9v73hFBuy0iihz7v8eDlBcGrMDmQ9TH&export=download&confirm=t' -o experiments/dependencies/best_model.pyt
 curl.exe -fL 'https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.20.1/microsoft.ml.onnxruntime.1.20.1.nupkg' -o build/dependencies/onnxruntime.zip
 Expand-Archive build/dependencies/onnxruntime.zip -DestinationPath build/dependencies/onnxruntime
-cmake -S . -B build/cpp-research -G Ninja -DCMAKE_BUILD_TYPE=Release -DFINGERPRINT_BUILD_RESEARCH=ON -DFINGERPRINT_BUILD_GUI=OFF
-cmake --build build/cpp-research --target export_deepprint deepprint_research
-.\build\cpp-research\export_deepprint.exe build/dependencies/best_model.pyt tools/deepprint/architecture build/models/deepprint_texminu_512.onnx
+cmake -S . -B experiments/tools-build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFINGERPRINT_BUILD_RESEARCH=ON -DFINGERPRINT_BUILD_GUI=OFF
+cmake --build experiments/tools-build --target export_deepprint deepprint_research
+.\experiments\tools-build\export_deepprint.exe experiments/dependencies/best_model.pyt tools/deepprint/architecture models/release/deepprint_texminu_512.onnx
 ```
 
 기존 모델을 보관한 PC에서는 변환기의 마지막 인수에 새 파일명을 지정하세요. DLL을 구성할 때 `FINGERPRINT_DEEPPRINT_MODEL`로 사용할 파일을 지정할 수 있습니다. MSYS2에서는 위의 Ninja 대신 DLL 빌드 예시의 MinGW 생성기·컴파일러를 사용합니다.
 
-새 클론에서 위 모델로 평가 GUI를 포함한 시연 패키지를 묶으려면 같은 터미널에서 실행합니다.
-
-```powershell
-cmake -S . -B build/cpp-validation -G Ninja -DCMAKE_BUILD_TYPE=Release -DFINGERPRINT_DEEPPRINT=ON -DFINGERPRINT_BUILD_GUI=ON -DFINGERPRINT_BUILD_RESEARCH=ON -DFINGERPRINT_FVC2004_ROI=ON '-DFINGERPRINT_TEXTURE_WEIGHT:STRING=0.22' -DFINGERPRINT_DEEPPRINT_REFERENCE_DIR=tests/fixtures/deepprint
-cmake --build build/cpp-validation
-ctest --test-dir build/cpp-validation --output-on-failure
-cmake --install build/cpp-validation --prefix build/cpp-validation/presentation
-```
+모델과 런타임이 준비되면 [새 PC에서 처음부터 실행](#새-pc에서-처음부터-실행-visual-studio-20222026-공통)의 프리셋으로 빌드·테스트하고 `dist/`에 설치합니다.
 
 변환기는 공개 체크포인트의 SHA-256을 검사하고, 저장소에 포함된 고정 추론 그래프에 학습 텐서 394개를 채웁니다. 합성곱과 추론용 BatchNorm을 결합하고 질감·특징점 출력을 연결합니다. 그래프 파일에는 연산 구조와 고정 필터가 들어 있습니다. CTest는 FVC 원본을 직접 읽어 기존 독립 기준 벡터와 대조합니다. 소수점 연산 순서에 따라 ONNX 파일 해시가 달라질 수 있습니다. [변환기](tools/deepprint/export_model.cpp) · [그래프와 파라미터 배치](tools/deepprint/architecture/) · [기준 벡터](tests/fixtures/deepprint/) · [flx 소스 및 라이선스](https://github.com/tim-rohwedder/fixed-length-fingerprint-extractors/tree/7accfca1f33b9b42bfd220e43cd5bc13b4a7fa13) · [공개 체크포인트](https://drive.google.com/file/d/1R9v73hFBuy0iihz7v8eDlBcGrMDmQ9TH/view)
 
@@ -411,48 +377,48 @@ cmake --install build/cpp-validation --prefix build/cpp-validation/presentation
 
 ```powershell
 cmake -P tools/deepprint/prepare_training.cmake
-$native = (Resolve-Path build/dependencies/torch-native/runtimes/win-x64/native).Path
-cmake -S . -B build/cpp-research "-DFINGERPRINT_TORCH_NATIVE_DIR=$native"
-cmake --build build/cpp-research --target deepprint_train deepprint_research
-$research = '.\build\cpp-research\deepprint_research.exe'
-$train = '.\build\cpp-research\deepprint_train.exe'
-$model = ((Select-String '^FINGERPRINT_DEEPPRINT_MODEL:FILEPATH=' build/cpp-validation/CMakeCache.txt).Line -split '=', 2)[1]
-$dll = 'build/cpp-validation/presentation/IndustryAlgorithm.dll'
+$native = (Resolve-Path experiments/dependencies/torch-native/runtimes/win-x64/native).Path
+cmake -S . -B experiments/tools-build "-DFINGERPRINT_TORCH_NATIVE_DIR=$native"
+cmake --build experiments/tools-build --target deepprint_train deepprint_research
+$research = '.\experiments\tools-build\deepprint_research.exe'
+$train = '.\experiments\tools-build\deepprint_train.exe'
+$model = 'models/release/deepprint_texminu_512.onnx'
+$dll = 'dist/IndustryAlgorithm.dll'
 $pairs = 'log/fvc2004-roi-deployment-20261125/app-run/logs/run-1795556427179-31364-1/pairs.csv'
 $idSplit = 'log/finetune-noise40-20261124-175440/split.csv'
 $captureSplit = 'log/finetune-last-id-sigma30-mean-20261125-053138/split.csv'
 $heldFolds = 'log/unseen-adaptation-20261125-055540/development_split.csv'
 $screenSplit = 'log/weight-tuning-20261124-164133/dll-verification/split.csv'
-& $research verify data/fvc $pairs $dll $model build/cpp-results/native.csv
-& $research screen $model data/fvc $pairs $screenSplit build/cpp-results/preprocessing
-& $research align $model data/fvc $pairs $screenSplit build/cpp-results/alignment $dll
-& $research roi build/evaluation/fvc2004-roi-validation/standard/pairs.csv build/evaluation/fvc2004-roi-validation/roi/pairs.csv $idSplit $captureSplit build/cpp-results/roi
+& $research verify data/fvc $pairs $dll $model experiments/native.csv
+& $research screen $model data/fvc $pairs $screenSplit experiments/preprocessing
+& $research align $model data/fvc $pairs $screenSplit experiments/alignment $dll
+& $research roi experiments/evaluation/fvc2004-roi-validation/standard/pairs.csv experiments/evaluation/fvc2004-roi-validation/roi/pairs.csv $idSplit $captureSplit experiments/roi
 ```
 
 아래 실험은 저장된 손가락 분할을 재사용합니다. `branches`는 A·B·C를 같은 기준 모델에서 시작하고, `augmentation`은 보류 ID를 제외한 세 내부 폴드에서 증강·학습률·투영층·정합 비율을 선택합니다. 선택을 기록한 뒤 보류 ID와 전체 목록의 EER을 각각 계산합니다. 결과 폴더는 실행마다 새 경로를 지정합니다. 원본 평가 결과는 위의 최종 DLL 검증 표를 참조하세요. C++ 학습기는 고정 시드의 표준 난수 생성기를 사용하므로 과거 학습과 표본 순서 및 후보 가중치가 달라질 수 있습니다.
 
 ```powershell
-& $train branches $model data/fvc $pairs log/fvc-branch-tuning-20261126/split.csv build/cpp-results/branches
-& $train augmentation $model data/fvc $pairs log/fvc-augmentation-tuning-20261126/folds.csv build/cpp-results/augmentation
+& $train branches $model data/fvc $pairs log/fvc-branch-tuning-20261126/split.csv experiments/branches
+& $train augmentation $model data/fvc $pairs log/fvc-augmentation-tuning-20261126/folds.csv experiments/augmentation
 ```
 
-기준 모델로 학습부터 실험용 DLL 빌드, KISA 대조까지 한 번에 실행하려면 저장소 루트에서 `cmake -DSTUDY=branches -P tools/deepprint/replay.cmake` 또는 `cmake -DSTUDY=augmentation -P tools/deepprint/replay.cmake`를 사용합니다. 이전 실험의 `build/evaluator/deepprint_texminu_512.onnx`가 있으면 재사용하고, 새 빌드에서는 `build/models/deepprint_texminu_512.onnx`를 읽습니다. 이미 학습한 경로는 `-DVERIFY_ONLY=ON -DOUTPUT=<결과 폴더>`로 지정합니다.
+기준 모델로 학습부터 실험용 DLL 빌드, KISA 대조까지 한 번에 실행하려면 저장소 루트에서 `cmake -DSTUDY=branches -P tools/deepprint/replay.cmake` 또는 `cmake -DSTUDY=augmentation -P tools/deepprint/replay.cmake`를 사용합니다. 기본 모델은 `models/release/deepprint_texminu_512.onnx`, 기본 출력은 `experiments/<실험명>/`입니다. 다른 기준 모델은 `-DMODEL=<경로>`로 지정합니다. 이미 학습한 경로는 `-DVERIFY_ONLY=ON -DOUTPUT=<결과 폴더>`로 지정합니다.
 
 각 결과 폴더의 `selection.csv`에서 질감 비중을 읽습니다. 실험용 DLL을 새 빌드 폴더에서 `-DFINGERPRINT_TEXTURE_WEIGHT=<선택한 비중>`, `-DFINGERPRINT_DEEPPRINT_MODEL=<후보 ONNX 절대 경로>`로 빌드한 뒤 `deepprint_research verify`의 마지막 인수에도 같은 비중을 지정합니다.
 
 
 ### 노이즈 TIFF 생성 및 일괄 평가
 
-아래 명령의 `build\evaluator`는 MinGW 빌드 경로입니다. Visual Studio 프리셋으로 빌드했다면 `build\deepprint-release`로 바꿉니다.
+아래 명령의 `build\release`는 MinGW 빌드 경로입니다. Visual Studio 프리셋으로 빌드했다면 `build\deepprint-release`로 바꿉니다.
 
 아래 예시는 기준 시드 `42`와 8비트 픽셀 기준 가우시안 노이즈 `σ=2, 5, 10`을 사용합니다. 각 실행의 출력은 새 폴더에 저장합니다.
 
 ```powershell
-.\build\evaluator\augment_fvc.exe data/fvc build/augmentation/fvc-seed42 42 2 5 10
-.\build\evaluator\evaluate_noise.exe data/fvc build/augmentation/fvc-seed42 build/evaluator/IndustryAlgorithm.dll build/evaluation/deepprint-seed42
+.\build\release\augment_fvc.exe data/fvc experiments/augmentation/fvc-seed42 42 2 5 10
+.\build\release\evaluate_noise.exe data/fvc experiments/augmentation/fvc-seed42 dist/IndustryAlgorithm.dll experiments/evaluation/deepprint-seed42
 ```
 
-`build/augmentation/fvc-seed42/manifest.csv`가 이미 있으면 같은 증강본을 재사용할 수 있습니다. 평가만 반복할 때는 두 번째 명령의 마지막 인자에 새 결과 폴더를 지정합니다.
+`experiments/augmentation/fvc-seed42/manifest.csv`가 이미 있으면 같은 증강본을 재사용할 수 있습니다. 평가만 반복할 때는 두 번째 명령의 마지막 인자에 새 결과 폴더를 지정합니다.
 
 - `augment_fvc.exe`는 원본 크기에서 노이즈를 더하고 픽셀을 `0~255`로 제한합니다. 노이즈 강도 인자를 생략하면 `2, 5, 10`을 사용합니다. 기본 설정에서는 TIFF 720장과 `manifest.csv`를 생성하며, 자동으로 포함되는 `σ=0` 조건은 원본 TIFF를 가리킵니다. 같은 실행 파일과 시드에서는 같은 픽셀이 생성됩니다.
 - `evaluate_noise.exe`는 원본 등록 템플릿을 재사용하고, 비교 영상으로 해당 노이즈 강도의 TIFF를 읽습니다. DB와 강도 조합마다 같은 손가락 280쌍과 다른 손가락 2,880쌍을 비교합니다. `pairs.csv`에는 쌍별 점수와 실패 상태를 기록하고, `summary.csv`에는 성공 점수의 선형보간 EER, 실패율, 평균 시간, 템플릿 크기를 기록합니다. 오류율은 0~1 비율입니다.
@@ -462,8 +428,8 @@ $screenSplit = 'log/weight-tuning-20261124-164133/dll-verification/split.csv'
 저장소 루트에서 아래 명령을 실행합니다. 출력 폴더에는 새 이름을 지정합니다.
 
 ```powershell
-.\build\evaluator\augment_fvc.exe data/fvc build/augmentation/fvc-robustness --robustness
-.\build\evaluator\evaluate_noise.exe data/fvc build/augmentation/fvc-robustness build/evaluator/IndustryAlgorithm.dll build/evaluation/deepprint-robustness
+.\build\release\augment_fvc.exe data/fvc experiments/augmentation/fvc-robustness --robustness
+.\build\release\evaluate_noise.exe data/fvc experiments/augmentation/fvc-robustness dist/IndustryAlgorithm.dll experiments/evaluation/deepprint-robustness
 ```
 
 `--robustness`는 원본 한 장마다 가우시안 노이즈 6종(`σ = 2, 5, 10`과 시드 `42, 43`), 회전 4종(`−10°, −5°, +5°, +10°`), 밝기 2종(픽셀값 `−15, +15`)을 각각 생성합니다. 양수 각도는 반시계 방향이며, 회전 영상은 원본 크기를 유지하고 바깥쪽을 흰색으로 채웁니다. FVC 원본 240장 기준 증강본은 2,880장입니다. `--robustness --flip`은 좌우 반전 240장을 추가합니다.
@@ -476,8 +442,8 @@ $screenSplit = 'log/weight-tuning-20261124-164133/dll-verification/split.csv'
 
 ```powershell
 $run = 'run-1795498198097-1824-1'
-.\build\evaluator\tune_weights.exe data/fvc "build/app-results/logs/$run/pairs.csv" `
-  "build/app-results/templates/$run/worker-1" log/weight-tuning-rerun
+.\build\release\tune_weights.exe data/fvc "experiments/app-results/logs/$run/pairs.csv" `
+  "experiments/app-results/templates/$run/worker-1" log/weight-tuning-rerun
 ```
 
 도구는 손가락 ID를 시드 42로 나누고, 개발 데이터에서 질감 가중치 0.00~1.00을 0.01 간격으로 시험합니다. 개발 데이터의 DB별 EER 평균으로 후보를 선택하고, 확인 데이터에서 기존 연결 코사인과 선택한 가중치를 비교합니다. 운영 임계값은 개발 단계에서 각 DB의 FMR이 1% 이하인 최소 공통 값으로 정합니다.
@@ -495,11 +461,11 @@ FVC2002·2004에서 DB별 최대 손가락 ID를 최종 평가용으로 지정�
 캐시 도구는 실제 증강 TIFF와 `manifest.csv`를 읽고 촬영본별 특징·파일 순서·처리 시간을 NPZ에 저장합니다. 동일 모델의 기존 `fvc-noise40-cache`도 읽습니다. 위의 C++ 연구 도구 절에서 정의한 PowerShell 변수를 사용합니다. 아래 입력 폴더는 강건성 증강과 두 시드의 추가 노이즈 영상이 준비된 경우의 예시입니다.
 
 ```powershell
-$cache = 'build/cpp-results/cache'
-& $research cache $model data/fvc $cache 40 pilots build/augmentation/fvc-robustness-verify build/augmentation/fvc-high-noise-seed42 build/augmentation/fvc-high-noise-seed43
-& $train heads $model $cache $idSplit $captureSplit $heldFolds build/cpp-results/heads
-& $train last-id $model $cache $idSplit $captureSplit $heldFolds build/cpp-results/last-id
-& $train unseen $model $cache $idSplit $captureSplit $heldFolds build/cpp-results/unseen
+$cache = 'experiments/cache'
+& $research cache $model data/fvc $cache 40 pilots experiments/augmentation/fvc-robustness-verify experiments/augmentation/fvc-high-noise-seed42 experiments/augmentation/fvc-high-noise-seed43
+& $train heads $model $cache $idSplit $captureSplit $heldFolds experiments/heads
+& $train last-id $model $cache $idSplit $captureSplit $heldFolds experiments/last-id
+& $train unseen $model $cache $idSplit $captureSplit $heldFolds experiments/unseen
 ```
 
 `heads`는 개발 ID 5개로 교차검증한 뒤 남은 5개로 평가합니다. `last-id`는 동일 ID의 새 촬영본과 가장 큰 ID의 새 등록을 각각 평가합니다. `unseen`은 보류 손가락 폴드에서 업데이트 강도와 증강을 선택합니다. [C++ 학습 및 검증](tools/deepprint/legacy_study.cpp) · [과거 σ=30 실험](log/finetune-last-id-sigma30-mean-20261125-053138/evaluation.csv)

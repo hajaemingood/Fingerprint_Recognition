@@ -228,7 +228,7 @@ void tailStudy(const std::string &study, const fs::path &model, const fs::path &
     Inference engine(featureModel);
     Weights initial(model);
     if (branches)
-        initial.loadTextureBlock("build/dependencies/best_model.pyt",
+        initial.loadTextureBlock("experiments/dependencies/best_model.pyt",
                                  "tools/deepprint/architecture/parameters.tsv");
     auto dev = indices(banks, marks.front(), {"train", "validation"}),
          confirm = indices(banks, marks.front(), {"confirmation"});
