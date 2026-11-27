@@ -660,7 +660,7 @@ AdamW에서 $g_t$는 위 목적함수로 누적한 gradient다. 1·2차 이동�
 
 ### 선택과 내보내기
 
-`branches`는 기본 4·8·12스텝의 검증 임베딩에 질감 비중 0~100%(5% 간격)와 22%를 적용한다. `report`는 **폴드별 EER을 DB별 평균 → 가장 높은 DB EER → DB 평균 EER → 22%와의 거리** 순으로 최소화한다. 기준 모델의 최적 비율과 미세조정 후보 최적 비율을 각각 기록한다. `augmentation`은 일정·증강·분기·rank·음성 샘플링·손실·반영 강도를 비교한 뒤 상위 후보의 비율을 탐색한다. `Weights::save`는 선택된 initializer만 교체한다. 입력 `image`와 출력 `embedding`을 유지해 기존 DLL로 시험할 수 있다. [후보 선택·검증](../tools/deepprint/tail_study.cpp) · [체크포인트 → ONNX](../tools/deepprint/training.cpp) · [실험 DLL 빌드와 대조](../tools/deepprint/replay.cmake)
+`branches`는 기본 4·8·12스텝의 검증 임베딩에 질감 비중 0~100%(5% 간격)와 22%를 적용한다. `report`는 **폴드별 EER을 DB별 평균 → 가장 높은 DB EER → DB 평균 EER → 22%와의 거리** 순으로 최소화한다. 기준 모델의 최적 비율과 미세조정 후보 최적 비율을 각각 기록한다. `augmentation`은 일정·증강·분기·rank·음성 샘플링·손실·반영 강도를 비교한 뒤 상위 후보의 비율을 탐색한다. `Weights::save`는 선택된 initializer만 교체한다. 입력 `image`와 출력 `embedding`을 유지하며, 선택한 ONNX와 정합 비율로 실험용 DLL을 빌드해 시험한다. [후보 선택·검증](../tools/deepprint/tail_study.cpp) · [체크포인트 → ONNX](../tools/deepprint/training.cpp) · [실험 DLL 빌드와 대조](../tools/deepprint/replay.cmake)
 
 ## 9. Research and Evaluation
 

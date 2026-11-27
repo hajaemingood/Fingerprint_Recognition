@@ -669,7 +669,7 @@ void drawSetupPage(AppState &s, HDC dc)
     write(s, dc, L"알고리즘 DLL", 48, 526, 332, 30, Medium);
     write(s, dc, L"x64 · 공통 KISA 인터페이스", 48, 674, 332, 24, Body, kAccent);
     write(s, dc, L"Enroll / Attempt / Compare 함수가 필요합니다", 48, 708, 332, 22, Small, kMuted);
-    write(s, dc, L"DeepPrint 모델·런타임은 실행 폴더에서 재사용", 48, 744, 332, 22, Small, kMuted);
+    write(s, dc, L"DeepPrint DLL 옆에 onnxruntime.dll을 두세요", 48, 744, 332, 22, Small, kMuted);
     write(s, dc, L"비교 목록 규칙", 448, 216, 372, 30, Medium);
     write(s, dc, L"등록 이미지", 448, 252, 270, 28, Body);
     write(s, dc, L"본인 비교 · 같은 손가락", 448, 338, 290, 28, Body);

@@ -436,7 +436,7 @@ $screenSplit = 'log/weight-tuning-20261124-164133/dll-verification/split.csv'
 & $train augmentation $model data/fvc $pairs log/fvc-augmentation-tuning-20261126/folds.csv build/cpp-results/augmentation
 ```
 
-기존 기준 모델(`build/evaluator/deepprint_texminu_512.onnx`)로 학습부터 실험용 DLL 빌드, KISA 대조까지 한 번에 실행하려면 저장소 루트에서 `cmake -DSTUDY=branches -P tools/deepprint/replay.cmake` 또는 `cmake -DSTUDY=augmentation -P tools/deepprint/replay.cmake`를 사용합니다. 이미 학습한 경로는 `-DVERIFY_ONLY=ON -DOUTPUT=<결과 폴더>`로 지정합니다.
+기준 모델로 학습부터 실험용 DLL 빌드, KISA 대조까지 한 번에 실행하려면 저장소 루트에서 `cmake -DSTUDY=branches -P tools/deepprint/replay.cmake` 또는 `cmake -DSTUDY=augmentation -P tools/deepprint/replay.cmake`를 사용합니다. 이전 실험의 `build/evaluator/deepprint_texminu_512.onnx`가 있으면 재사용하고, 새 빌드에서는 `build/models/deepprint_texminu_512.onnx`를 읽습니다. 이미 학습한 경로는 `-DVERIFY_ONLY=ON -DOUTPUT=<결과 폴더>`로 지정합니다.
 
 각 결과 폴더의 `selection.csv`에서 질감 비중을 읽습니다. 실험용 DLL을 새 빌드 폴더에서 `-DFINGERPRINT_TEXTURE_WEIGHT=<선택한 비중>`, `-DFINGERPRINT_DEEPPRINT_MODEL=<후보 ONNX 절대 경로>`로 빌드한 뒤 `deepprint_research verify`의 마지막 인수에도 같은 비중을 지정합니다.
 
